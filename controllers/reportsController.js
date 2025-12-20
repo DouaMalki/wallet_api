@@ -49,7 +49,8 @@ export async function getTripReports(req, res) {
 // SystemGrowthReports controller
 export async function getSystemGrowth(req, res) {
   try {
-    const result = await sql`
+    // 1. Monthly growth (last 12 months)
+    const monthlyResult = await sql`
       SELECT
         TO_CHAR(created_at, 'Mon') AS label,
         COUNT(*)::int AS value,
@@ -60,10 +61,39 @@ export async function getSystemGrowth(req, res) {
       ORDER BY order_date
     `;
 
-    res.json(result.map(r => ({
-      label: r.label,
-      value: r.value
-    })));
+    // 2. Total users
+    const totalUsersResult = await sql`
+      SELECT COUNT(*)::int AS total
+      FROM users
+    `;
+
+    // 3. Users registered last year
+    const lastYearResult = await sql`
+      SELECT COUNT(*)::int AS total
+      FROM users
+      WHERE created_at >= DATE_TRUNC('year', CURRENT_DATE)
+        - INTERVAL '1 year'
+        AND created_at < DATE_TRUNC('year', CURRENT_DATE)
+    `;
+
+    // 4. Users registered last month
+    const lastMonthResult = await sql`
+      SELECT COUNT(*)::int AS total
+      FROM users
+      WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+        AND created_at < DATE_TRUNC('month', CURRENT_DATE)
+    `;
+
+    res.json({
+      growth: monthlyResult.map(r => ({
+        label: r.label,
+        value: r.value
+      })),
+      totalUsers: totalUsersResult[0].total,
+      lastYearUsers: lastYearResult[0].total,
+      lastMonthUsers: lastMonthResult[0].total
+    });
+
   } catch (err) {
     console.log("System growth error", err);
     res.status(500).json({ message: "Internal server error" });
