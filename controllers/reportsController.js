@@ -125,7 +125,7 @@ export async function getUsersActivity(req, res) {
 }
 
 
-
+// UsersLevelsReports controller
 export async function getUsersLevelsSummary(req, res) {
   try {
     const result = await sql`
