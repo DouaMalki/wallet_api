@@ -7,6 +7,6 @@ import {
 const router = express.Router();
 
 // sync the user after authentication (login or sign up)
-router.get("/authentication", syncUserAfterFirebaseAuth);
+router.post("/authentication", syncUserAfterFirebaseAuth);
 
 export default router;

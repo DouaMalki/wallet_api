@@ -25,7 +25,7 @@ export async function syncUserAfterFirebaseAuth(req, res) {
         role,
         name,
         email,
-        last_login,
+        last_login
       )
       VALUES (
         ${firebase_uid},
