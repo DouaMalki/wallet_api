@@ -172,33 +172,35 @@ export async function getUsersByLevel(req, res) {
 
 
 
+import { sql } from "../config/db.js";
+
 export async function updateReportAfterSystemSettingsUpdate(req, res) {
   try {
-    // latest system settings
+    // Get the latest system settings
     const settings = (await sql`
       SELECT *
       FROM system_settings
       ORDER BY created_at DESC
       LIMIT 1
     `)[0];
-
-    // latest report (previous snapshot)
-    const prev = (await sql`
+    // Get the latest report
+    const previousReport = (await sql`
       SELECT *
       FROM reports
       ORDER BY created_at DESC
       LIMIT 1
     `)[0];
 
-    // sync helper
-    const sync = (oldJson = {}, settingsJson = {}) => {
+    // Sync function
+    const syncJson = (oldJson = {}, settingsJson = {}) => {
       const result = {};
       for (const key of Object.keys(settingsJson)) {
-        result[key] = oldJson[key] ?? 0; // keep old value or 0 if new
+        result[key] = oldJson[key] ?? 0;
       }
-      return result; // deleted keys automatically removed
+      return result;
     };
 
+    // Insert a new report
     await sql`
       INSERT INTO reports (
         members,
@@ -209,19 +211,19 @@ export async function updateReportAfterSystemSettingsUpdate(req, res) {
         answered_surveys
       )
       VALUES (
-        ${sync(prev.members, settings.member_types)},
-        ${sync(prev.trip_type, settings.trip_types)},
-        ${sync(prev.visited_destinations, settings.destinations)},
-        ${sync(prev.main_problem, settings.problem_types)},
-        ${prev.finished_trips},
-        ${prev.answered_surveys}
+        ${syncJson(previousReport.members, settings.member_types)},
+        ${syncJson(previousReport.trip_type, settings.trip_types)},
+        ${syncJson(previousReport.visited_destinations, settings.destinations)},
+        ${syncJson(previousReport.main_problem, settings.problem_types)},
+        ${previousReport.finished_trips},
+        ${previousReport.answered_surveys}
       )
     `;
 
-    res.json({ message: "New report snapshot created successfully" });
+    res.json({ message: "New report created successfully" });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Failed to create report snapshot" });
+    res.status(500).json({ message: "Failed to create report" });
   }
 }
