@@ -286,11 +286,17 @@ export async function updateReportAfterSurvey(req, res) {
 // Update the latest report after submitting a trip form
 export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
-    const {
-      members,
-      trip_type,
-      destinations
-    } = req.body;
+    
+    const members =
+      req.body.members ||
+      (req.query.members ? JSON.parse(req.query.members) : {});
+    const trip_type =
+      req.body.trip_type || req.query.trip_type;
+    const destinations =
+      req.body.destinations ||
+      (req.query.destinations
+        ? req.query.destinations.split(",")
+        : []);
 
     // Get the latest report
     const report = (await sql`
@@ -299,15 +305,16 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       ORDER BY created_at DESC
       LIMIT 1
     `)[0];
-    // Copy JSON fields
+    // Clone JSONB fields
     const updatedMembers = { ...report.members };
     const updatedTripTypes = { ...report.trip_type };
     const updatedDestinations = { ...report.visited_destinations };
 
     // Update members
-    members.forEach(type => {
-      updatedMembers[type] = (updatedMembers[type] || 0) + 1;
-    });
+    for (const type in members) {
+      updatedMembers[type] =
+        (updatedMembers[type] || 0) + Number(members[type]);
+    }
     // Update trip types
     updatedTripTypes[trip_type] =
       (updatedTripTypes[trip_type] || 0) + 1;
@@ -326,9 +333,9 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
         visited_destinations = ${updatedDestinations}
       WHERE report_id = ${report.report_id}
     `;
-    res.json({ message: "Report updated after trip submission" });
-  } catch (error) {
-    console.error(error);
+    res.json({ message: "Latest report updated after trip form" });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Failed to update report" });
   }
 }
