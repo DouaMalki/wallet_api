@@ -176,9 +176,9 @@ export async function getUsersByLevel(req, res) {
 export async function updateReportsAfterTripSubmit(req, res) {
   try {
     const {
-      members,          // { Adults: 3, Children: 2 }
-      tripType,         // "Historical"
-      destination       // "Nablus"
+      members,
+      tripType,
+      destination
     } = req.body;
 
     // 1. get latest report
@@ -188,11 +188,12 @@ export async function updateReportsAfterTripSubmit(req, res) {
       ORDER BY created_at DESC
       LIMIT 1
     `;
+    
+    console.log("reports data got...");
 
     if (result.length === 0) {
       return res.status(400).json({ message: "No report exists" });
     }
-
     const report = result[0];
 
     // 2. clone JSON fields
@@ -204,19 +205,20 @@ export async function updateReportsAfterTripSubmit(req, res) {
     for (const [key, value] of Object.entries(members)) {
       updatedMembers[key] = (updatedMembers[key] ?? 0) + value;
     }
-
+    console.log("members updated...");
     // 4. update trip type
     if (tripType) {
       updatedTripTypes[tripType] =
         (updatedTripTypes[tripType] ?? 0) + 1;
     }
-
+    console.log("trip types updated...");
     // 5. update destination
     if (destination) {
       updatedDestinations[destination] =
         (updatedDestinations[destination] ?? 0) + 1;
     }
-
+    console.log("trip destinations updated...");
+    
     // 6. update report
     await sql`
       UPDATE reports
@@ -226,7 +228,7 @@ export async function updateReportsAfterTripSubmit(req, res) {
         visited_destinations = ${updatedDestinations}::jsonb
       WHERE report_id = ${report.report_id}
     `;
-
+    console.log("a new report created...");
     res.status(200).json({
       message: "Report updated after trip submission"
     });
