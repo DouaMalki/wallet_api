@@ -171,9 +171,6 @@ export async function getUsersByLevel(req, res) {
 
 
 
-
-import { sql } from "../config/db.js";
-
 export async function updateReportAfterSystemSettingsUpdate(req, res) {
   try {
     // Get the latest system settings
