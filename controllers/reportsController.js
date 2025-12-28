@@ -171,6 +171,9 @@ export async function getUsersByLevel(req, res) {
 
 
 
+
+
+// Create a new report after updating the system settings
 export async function updateReportAfterSystemSettingsUpdate(req, res) {
   try {
     // Get the latest system settings
@@ -226,7 +229,7 @@ export async function updateReportAfterSystemSettingsUpdate(req, res) {
 }
 
 
-
+// Update the latest report after answering or non answering a survey
 export async function updateReportAfterSurvey(req, res) {
   try {
     const {
@@ -242,7 +245,6 @@ export async function updateReportAfterSurvey(req, res) {
       ORDER BY created_at DESC
       LIMIT 1
     `)[0];
-
     // Copy JSON fields
     const updatedAnswered = { ...report.answered_surveys };
     const updatedFinished = { ...report.finished_trips };
@@ -274,9 +276,59 @@ export async function updateReportAfterSurvey(req, res) {
       WHERE report_id = ${report.report_id}
     `;
     res.json({ message: "Report updated after survey submission" });
-
   } catch (err) {
     console.error(err);
+    res.status(500).json({ message: "Failed to update report" });
+  }
+}
+
+
+// Update the latest report after submitting a trip form
+export async function updateReportAfterSubmittingTripForm(req, res) {
+  try {
+    const {
+      members,
+      trip_type,
+      destinations
+    } = req.body;
+
+    // Get the latest report
+    const report = (await sql`
+      SELECT *
+      FROM reports
+      ORDER BY created_at DESC
+      LIMIT 1
+    `)[0];
+    // Copy JSON fields
+    const updatedMembers = { ...report.members };
+    const updatedTripTypes = { ...report.trip_type };
+    const updatedDestinations = { ...report.visited_destinations };
+
+    // Update members
+    members.forEach(type => {
+      updatedMembers[type] = (updatedMembers[type] || 0) + 1;
+    });
+    // Update trip types
+    updatedTripTypes[trip_type] =
+      (updatedTripTypes[trip_type] || 0) + 1;
+    // Update destinations
+    destinations.forEach(dest => {
+      updatedDestinations[dest] =
+        (updatedDestinations[dest] || 0) + 1;
+    });
+
+    // Save updates
+    await sql`
+      UPDATE reports
+      SET
+        members = ${updatedMembers},
+        trip_type = ${updatedTripTypes},
+        visited_destinations = ${updatedDestinations}
+      WHERE report_id = ${report.report_id}
+    `;
+    res.json({ message: "Report updated after trip submission" });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Failed to update report" });
   }
 }
