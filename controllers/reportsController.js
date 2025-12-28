@@ -224,3 +224,59 @@ export async function updateReportAfterSystemSettingsUpdate(req, res) {
     res.status(500).json({ message: "Failed to create report" });
   }
 }
+
+
+
+export async function updateReportAfterSurvey(req, res) {
+  try {
+    const {
+      answered,
+      finished,
+      problems = []
+    } = req.body;
+
+    // Get the latest report
+    const report = (await sql`
+      SELECT *
+      FROM reports
+      ORDER BY created_at DESC
+      LIMIT 1
+    `)[0];
+
+    // Copy JSON fields
+    const updatedAnswered = { ...report.answered_surveys };
+    const updatedFinished = { ...report.finished_trips };
+    const updatedProblems = { ...report.main_problem };
+
+    // Update answered surveys
+    updatedAnswered[answered ? "yes" : "no"] =
+      (updatedAnswered[answered ? "yes" : "no"] || 0) + 1;
+    // Update finished trips (ONLY if survey answered)
+    if(finished)
+    {
+      updatedFinished[finished ? "yes" : "no"] =
+      (updatedFinished[finished ? "yes" : "no"] || 0) + 1;
+    }
+    // Update problems (ONLY if survey answered)
+    if (answered) {
+      problems.forEach(p => {
+        updatedProblems[p] = (updatedProblems[p] || 0) + 1;
+      });
+    }
+
+    // Save updates
+    await sql`
+      UPDATE reports
+      SET
+        answered_surveys = ${updatedAnswered},
+        finished_trips = ${updatedFinished},
+        main_problem = ${updatedProblems}
+      WHERE report_id = ${report.report_id}
+    `;
+    res.json({ message: "Report updated after survey submission" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to update report" });
+  }
+}
