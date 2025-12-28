@@ -5,6 +5,7 @@ import rateLimiter from "./middleware/rateLimiter.js";
 import job from "./config/cron.js";
 // routers that will be used by the express app
 import reportsRouter from "./routers/reportsRouter.js";
+import authenticationRouter from "./routers/authenticationRouter.js";
 
 
 const app = express();
@@ -22,7 +23,7 @@ app.get("/api/health", (req, res) => {
 
 // routers used by the express app
 app.use("/api/reports", reportsRouter);
-
+app.use("/api", authenticationRouter);
 
 
 // To test that the application connected to the database
