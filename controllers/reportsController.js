@@ -254,7 +254,7 @@ export async function updateReportAfterSurvey(req, res) {
     updatedAnswered[answered ? "yes" : "no"] =
       (updatedAnswered[answered ? "yes" : "no"] || 0) + 1;
     // Update finished trips (ONLY if survey answered)
-    if(finished)
+    if(answered)
     {
       updatedFinished[finished ? "yes" : "no"] =
       (updatedFinished[finished ? "yes" : "no"] || 0) + 1;
