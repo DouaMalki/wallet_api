@@ -232,11 +232,12 @@ export async function updateReportAfterSystemSettingsUpdate(req, res) {
 // Update the latest report after answering or non answering a survey
 export async function updateReportAfterSurvey(req, res) {
   try {
-    const {
-      answered,
-      finished,
-      problems = []
-    } = req.body;
+    const answered = req.body.answered ?? (req.query.answered === "true");
+    const finished = req.body.finished ?? (req.query.finished === "true");
+    const problems =
+      req.body.problems ??
+      (req.query.problems ? req.query.problems.split(",") : []);
+
 
     // Get the latest report
     const report = (await sql`
