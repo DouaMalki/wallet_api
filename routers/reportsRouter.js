@@ -5,8 +5,10 @@ import {
   getSystemGrowth,
   getUsersActivity,
   getUsersLevelsSummary,
-  getUsersByLevel
+  getUsersByLevel,
+  updateReportsAfterSystemChange
 } from "../controllers/reportsController.js";
+
 
 const router = express.Router();
 
@@ -21,5 +23,7 @@ router.get("/activity", getUsersActivity);
 // Users levels reports
 router.get("/levels", getUsersLevelsSummary);
 router.get("/levels/:level", getUsersByLevel);
+// Update the reports table after changing the system settings
+router.post("/updated_settings", updateReportsAfterSystemChange);
 
 export default router;

@@ -167,3 +167,83 @@ export async function getUsersByLevel(req, res) {
     res.status(500).json({ message: "Internal server error" });
   }
 }
+
+export async function updateReportsAfterSystemChange(req, res) {
+  try {
+    const {
+      membersTypes,        // ['Children', 'Adults', ...]
+      tripTypes,           // ['Historical', 'Entertainment']
+      destinations,        // ['Nablus', 'Jerusalem']
+      problemTypes         // ['Payment', 'Crashes']
+    } = req.body;
+
+    // 1. get latest report
+    const latestResult = await sql`
+      SELECT *
+      FROM reports
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    if (latestResult.length === 0) {
+      return res.status(400).json({ message: "No base report exists" });
+    }
+
+    const latest = latestResult[0];
+
+    // 2. merge json fields
+    const newMembers = mergeReportJSON(latest.members, membersTypes);
+    const newTripTypes = mergeReportJSON(latest.trip_type, tripTypes);
+    const newDestinations = mergeReportJSON(
+      latest.visited_destinations,
+      destinations
+    );
+    const newProblems = mergeReportJSON(
+      latest.main_problem,
+      problemTypes
+    );
+
+    // answered_surveys & finished_trips remain the same structure
+    const answeredSurveys = latest.answered_surveys;
+    const finishedTrips = latest.finished_trips;
+
+    // 3. insert new report
+    await sql`
+      INSERT INTO reports (
+        members,
+        trip_type,
+        visited_destinations,
+        finished_trips,
+        main_problem,
+        answered_surveys
+      )
+      VALUES (
+        ${newMembers}::jsonb,
+        ${newTripTypes}::jsonb,
+        ${newDestinations}::jsonb,
+        ${finishedTrips}::jsonb,
+        ${newProblems}::jsonb,
+        ${answeredSurveys}::jsonb
+      )
+    `;
+
+    res.status(201).json({
+      message: "Report updated after system settings change"
+    });
+
+  } catch (err) {
+    console.log("Update reports error", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+function mergeReportJSON(oldData = {}, newKeys = []) {
+  const merged = {};
+
+  // keep existing values
+  for (const key of newKeys) {
+    merged[key] = oldData[key] ?? 0;
+  }
+
+  return merged;
+}
