@@ -172,198 +172,64 @@ export async function getUsersByLevel(req, res) {
 
 
 
-// after user submits trip form
-export async function updateReportsAfterTripSubmit(req, res) {
+export const syncReportsWithSystemSettings = async (req, res) => {
   try {
-    const {
-      members,
-      tripType,
-      destination
-    } = req.body;
-
-    // 1. get latest report
-    const result = await sql`
+    // get the latest system settings and report
+    const settingsResult = await pool.query(`
+      SELECT *
+      FROM system_settings
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    const settings = settingsResult.rows[0];
+    const reportResult = await pool.query(`
       SELECT *
       FROM reports
       ORDER BY created_at DESC
       LIMIT 1
-    `;
-    
-    console.log("reports data got...");
+    `);
+    const report = reportResult.rows[0];
 
-    if (result.length === 0) {
-      return res.status(400).json({ message: "No report exists" });
-    }
-    const report = result[0];
 
-    // 2. clone JSON fields
-    const updatedMembers = { ...report.members };
-    const updatedTripTypes = { ...report.trip_type };
-    const updatedDestinations = { ...report.visited_destinations };
+    const syncJson = (reportJson = {}, settingsJson = {}) => {
+      const updated = {};
+      // keep existing keys
+      for (const key of Object.keys(settingsJson)) {
+        updated[key] = reportJson[key] ?? 0;
+      }
+      return updated;
+    };
 
-    // 3. update members
-    for (const [key, value] of Object.entries(members)) {
-      updatedMembers[key] = (updatedMembers[key] ?? 0) + value;
-    }
-    console.log("members updated...");
-    // 4. update trip type
-    if (tripType) {
-      updatedTripTypes[tripType] =
-        (updatedTripTypes[tripType] ?? 0) + 1;
-    }
-    console.log("trip types updated...");
-    // 5. update destination
-    if (destination) {
-      updatedDestinations[destination] =
-        (updatedDestinations[destination] ?? 0) + 1;
-    }
-    console.log("trip destinations updated...");
-    
-    // 6. update report
-    await sql`
+    const updatedMembers = syncJson(report.members, settings.member_types);
+    const updatedTripTypes = syncJson(report.trip_type, settings.trip_types);
+    const updatedProblems = syncJson(report.main_problem, settings.problem_types);
+    const updatedDestinations = syncJson(
+      report.visited_destinations,
+      settings.destinations
+    );
+
+    // update 
+    await pool.query(
+      `
       UPDATE reports
-      SET
-        members = ${updatedMembers}::jsonb,
-        trip_type = ${updatedTripTypes}::jsonb,
-        visited_destinations = ${updatedDestinations}::jsonb
-      WHERE report_id = ${report.report_id}
-    `;
-    console.log("a new report created...");
-    res.status(200).json({
-      message: "Report updated after trip submission"
-    });
+      SET members = $1,
+          trip_type = $2,
+          main_problem = $3,
+          visited_destinations = $4
+      WHERE report_id = $5
+      `,
+      [
+        updatedMembers,
+        updatedTripTypes,
+        updatedProblems,
+        updatedDestinations,
+        report.report_id
+      ]
+    );
+    res.json({ message: "Reports synced with system settings" });
 
-  } catch (error) {
-    console.log("Trip submit report error", error);
-    res.status(500).json({ message: "Internal server error" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to sync reports" });
   }
-}
-
-
-
-// after admin updates system settings
-export async function createReportAfterSystemSettingsUpdate(req, res) {
-  try {
-    const {
-      member_types,
-      trip_types,
-      problem_types,
-      destinations
-    } = req.body;
-
-    // helper: convert keys to 0
-    const initZeroObject = (obj) =>
-      Object.keys(obj).reduce((acc, key) => {
-        acc[key] = 0;
-        return acc;
-      }, {});
-
-    const newMembers = initZeroObject(member_types);
-    const newTripTypes = initZeroObject(trip_types);
-    const newProblems = initZeroObject(problem_types);
-    const newDestinations = initZeroObject(destinations);
-
-    const finishedTrips = { yes: 0, no: 0 };
-    const answeredSurveys = { yes: 0, no: 0 };
-    const tripsBudget = { less: 0, equal: 0, more: 0 };
-
-    await sql`
-      INSERT INTO reports (
-        members,
-        trip_type,
-        visited_destinations,
-        finished_trips,
-        main_problem,
-        trips_budget,
-        answered_surveys
-      )
-      VALUES (
-        ${newMembers}::jsonb,
-        ${newTripTypes}::jsonb,
-        ${newDestinations}::jsonb,
-        ${finishedTrips}::jsonb,
-        ${newProblems}::jsonb,
-        ${tripsBudget}::jsonb,
-        ${answeredSurveys}::jsonb
-      )
-    `;
-
-    res.status(201).json({
-      message: "New report created after system settings update"
-    });
-
-  } catch (error) {
-    console.log("System settings report error", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-}
-
-
-
-
-
-
-// after user submits post trip survey
-export async function updateReportsAfterSurveySubmit(req, res) {
-  try {
-    const {
-      finished,     
-      main_problems      
-    } = req.body;
-
-    // 1. get latest report
-    const result = await sql`
-      SELECT *
-      FROM reports
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-
-    if (result.length === 0) {
-      return res.status(400).json({ message: "No report exists" });
-    }
-
-    const report = result[0];
-
-    // 2. clone JSON fields
-    const updatedAnswered = { ...report.answered_surveys };
-    const updatedFinished = { ...report.finished_trips };
-    const updatedProblems = { ...report.main_problem };
-
-    // 3. answered surveys (every survey submission = answered yes)
-    updatedAnswered.yes = (updatedAnswered.yes ?? 0) + 1;
-
-    // 4. finished trips
-    if (finished === "yes") {
-      updatedFinished.yes = (updatedFinished.yes ?? 0) + 1;
-    } else {
-      updatedFinished.no = (updatedFinished.no ?? 0) + 1;
-    }
-
-    // 5. main problems (checkboxes)
-    if (Array.isArray(main_problems)) {
-      main_problems.forEach(problem => {
-        updatedProblems[problem] =
-          (updatedProblems[problem] ?? 0) + 1;
-      });
-    }
-
-    // 6. update report
-    await sql`
-      UPDATE reports
-      SET
-        answered_surveys = ${updatedAnswered}::jsonb,
-        finished_trips = ${updatedFinished}::jsonb,
-        main_problem = ${updatedProblems}::jsonb
-      WHERE report_id = ${report.report_id}
-    `;
-
-    res.status(200).json({
-      message: "Report updated after survey submission"
-    });
-
-  } catch (error) {
-    console.log("Survey submit report error", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-}
+};

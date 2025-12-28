@@ -6,9 +6,7 @@ import {
   getUsersActivity,
   getUsersLevelsSummary,
   getUsersByLevel,
-  updateReportsAfterTripSubmit,
-  createReportAfterSystemSettingsUpdate,
-  updateReportsAfterSurveySubmit
+  syncReportsWithSystemSettings
 } from "../controllers/reportsController.js";
 
 
@@ -27,9 +25,7 @@ router.get("/levels", getUsersLevelsSummary);
 router.get("/levels/:level", getUsersByLevel);
 
 // Update the reports table after submitting a trip form, changing system settings, answering a trip survey
-router.post("/trip_submit", updateReportsAfterTripSubmit);
-router.post("/updated_settings", createReportAfterSystemSettingsUpdate);
-router.post("/survey_submit", updateReportsAfterSurveySubmit);
+router.post("/updated_settings", syncReportsWithSystemSettings);
 
 
 export default router;
