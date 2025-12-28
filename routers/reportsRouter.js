@@ -25,7 +25,7 @@ router.get("/levels", getUsersLevelsSummary);
 router.get("/levels/:level", getUsersByLevel);
 
 // Update the reports table after submitting a trip form, changing system settings, answering a trip survey
-router.post("/updated_settings", syncReportsWithSystemSettings);
+router.post("/updated_settings", updateReportAfterSystemSettingsUpdate);
 
 
 export default router;

@@ -172,64 +172,56 @@ export async function getUsersByLevel(req, res) {
 
 
 
-export const syncReportsWithSystemSettings = async (req, res) => {
+export async function updateReportAfterSystemSettingsUpdate(req, res) {
   try {
-    // get the latest system settings and report
-    const settingsResult = await pool.query(`
+    // latest system settings
+    const settings = (await sql`
       SELECT *
       FROM system_settings
       ORDER BY created_at DESC
       LIMIT 1
-    `);
-    const settings = settingsResult.rows[0];
-    const reportResult = await pool.query(`
+    `)[0];
+
+    // latest report (previous snapshot)
+    const prev = (await sql`
       SELECT *
       FROM reports
       ORDER BY created_at DESC
       LIMIT 1
-    `);
-    const report = reportResult.rows[0];
+    `)[0];
 
-
-    const syncJson = (reportJson = {}, settingsJson = {}) => {
-      const updated = {};
-      // keep existing keys
+    // sync helper
+    const sync = (oldJson = {}, settingsJson = {}) => {
+      const result = {};
       for (const key of Object.keys(settingsJson)) {
-        updated[key] = reportJson[key] ?? 0;
+        result[key] = oldJson[key] ?? 0; // keep old value or 0 if new
       }
-      return updated;
+      return result; // deleted keys automatically removed
     };
 
-    const updatedMembers = syncJson(report.members, settings.member_types);
-    const updatedTripTypes = syncJson(report.trip_type, settings.trip_types);
-    const updatedProblems = syncJson(report.main_problem, settings.problem_types);
-    const updatedDestinations = syncJson(
-      report.visited_destinations,
-      settings.destinations
-    );
+    await sql`
+      INSERT INTO reports (
+        members,
+        trip_type,
+        visited_destinations,
+        main_problem,
+        finished_trips,
+        answered_surveys
+      )
+      VALUES (
+        ${sync(prev.members, settings.member_types)},
+        ${sync(prev.trip_type, settings.trip_types)},
+        ${sync(prev.visited_destinations, settings.destinations)},
+        ${sync(prev.main_problem, settings.problem_types)},
+        ${prev.finished_trips},
+        ${prev.answered_surveys}
+      )
+    `;
 
-    // update 
-    await pool.query(
-      `
-      UPDATE reports
-      SET members = $1,
-          trip_type = $2,
-          main_problem = $3,
-          visited_destinations = $4
-      WHERE report_id = $5
-      `,
-      [
-        updatedMembers,
-        updatedTripTypes,
-        updatedProblems,
-        updatedDestinations,
-        report.report_id
-      ]
-    );
-    res.json({ message: "Reports synced with system settings" });
+    res.json({ message: "New report snapshot created successfully" });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to sync reports" });
+    res.status(500).json({ message: "Failed to create report snapshot" });
   }
-};
+}
