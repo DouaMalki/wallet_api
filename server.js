@@ -6,9 +6,7 @@ import job from "./config/cron.js";
 // routers that will be used by the express app
 import reportsRouter from "./routers/reportsRouter.js";
 import authenticationRouter from "./routers/authenticationRouter.js";
-
 import usersRouter from "./routers/usersRouter.js";
-import { initDBUsers } from "./config/db.js";
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
@@ -34,12 +32,6 @@ app.use("/api", authenticationRouter);
 // To test that the application connected to the database
 const PORT = process.env.PORT || 5000;
 initDB().then(() => {
-  app.listen(PORT, () => {
-    console.log("Server is up and running on PORT:", PORT);
-  });
-});
-
-initDBUsers().then(() => {
   app.listen(PORT, () => {
     console.log("Server is up and running on PORT:", PORT);
   });
