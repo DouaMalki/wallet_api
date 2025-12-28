@@ -6,7 +6,7 @@ import {
   getUsersActivity,
   getUsersLevelsSummary,
   getUsersByLevel,
-  syncReportsWithSystemSettings
+  updateReportAfterSystemSettingsUpdate
 } from "../controllers/reportsController.js";
 
 
