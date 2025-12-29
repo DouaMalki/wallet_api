@@ -54,7 +54,7 @@ export async function getUsersWithHighTripCreation(req, res) {
         u.email,
         COUNT(tp.trip_plan_id) AS trips_created
       FROM users u
-      JOIN trip_plan tp
+      LEFT JOIN trip_plan tp
         ON u.user_id = tp.user_id
       WHERE tp.creation_date >= NOW() - INTERVAL '60 seconds'
       GROUP BY u.user_id, u.name, u.email
