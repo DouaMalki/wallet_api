@@ -43,3 +43,59 @@ export async function getUserById(req, res) {
     res.status(500).json({ message: "Internal server error" });
   }
 }
+
+// Get users who created 5 or more trips in the last 60 seconds
+export async function getUsersWithHighTripCreation(req, res) {
+  try {
+    const users = await sql`
+      SELECT
+        u.user_id AS id,
+        u.name,
+        u.email,
+        COUNT(tp.trip_plan_id) AS trips_created
+      FROM users u
+      JOIN trip_plan tp
+        ON u.user_id = tp.user_id
+      WHERE tp.creation_date >= NOW() - INTERVAL '60 seconds'
+      GROUP BY u.user_id, u.name, u.email
+      HAVING COUNT(tp.trip_plan_id) >= 5
+      ORDER BY trips_created DESC
+    `;
+
+    res.json(users);
+  } catch (err) {
+    console.log("High trip creation users error", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+// Delete user by ID (and their trip plans)
+export async function deleteUser(req, res) {
+  try {
+    const { id } = req.params;
+
+    // First delete user's trip plans
+    await sql`
+      DELETE FROM trip_plan
+      WHERE user_id = ${id}
+    `;
+
+    // Then delete the user
+    const result = await sql`
+      DELETE FROM users
+      WHERE user_id = ${id}
+      RETURNING user_id
+    `;
+
+    if (result.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({ message: "User deleted successfully" });
+  } catch (err) {
+    console.log("Delete user error", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+
