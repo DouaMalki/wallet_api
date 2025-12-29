@@ -69,6 +69,36 @@ export async function getUsersWithHighTripCreation(req, res) {
   }
 }
 
+// Block user for a number of days (default: 2 days)
+export async function blockUser(req, res) {
+  try {
+    const { id } = req.params;
+    const { days = 2 } = req.body; // optional, defaults to 2 days
+
+    const result = await sql`
+      UPDATE users
+      SET
+        is_blocked = true,
+        blocked_until = NOW() + (${days} || ' days')::INTERVAL
+      WHERE user_id = ${id}
+      RETURNING user_id, is_blocked, blocked_until
+    `;
+
+    if (result.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      message: `User blocked for ${days} day(s)`,
+      user: result[0],
+    });
+  } catch (err) {
+    console.log("Block user error", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+
 // Delete user by ID (and their trip plans)
 export async function deleteUser(req, res) {
   try {
