@@ -1,8 +1,9 @@
 // wallet_api/repositories/locationsRepo.js
 import { sql } from "../config/db.js";
+import { mapLocationRow } from "../mappers/locationMapper.js";
 
 export async function getLocationsByCityId(cityId) {
-    const rows = await sql`
+  const rows = await sql`
     SELECT
       l.id,
       l.city_id,
@@ -31,5 +32,25 @@ export async function getLocationsByCityId(cityId) {
     ORDER BY l.created_at DESC;
   `;
 
-    return rows; // Neon بيرجع array of rows
+  return rows; // Neon بيرجع array of rows
+}
+
+export async function listLocations({ cityId, limit = 50 }) {
+  const rows = await sql`
+    SELECT
+      l.*,
+      COALESCE(
+        ARRAY_AGG(DISTINCT tt.slug) FILTER (WHERE tt.slug IS NOT NULL),
+        ARRAY[]::text[]
+      ) AS trip_types
+    FROM locations l
+    LEFT JOIN location_trip_types ltt ON ltt.location_id = l.id
+    LEFT JOIN trip_types tt ON tt.id = ltt.trip_type_id
+    ${cityId ? sql`WHERE l.city_id = ${cityId}` : sql``}
+    GROUP BY l.id
+    ORDER BY l.created_at DESC
+    LIMIT ${limit};
+  `;
+
+  return rows.map(mapLocationRow);
 }
