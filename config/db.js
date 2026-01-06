@@ -15,3 +15,14 @@ export async function initDB() {
     process.exit(1);
   }
 }
+
+export async function initDBUsers() {
+  try {
+    await sql`SELECT * from users`;
+    console.log("Database Connected successfully");
+  } catch (error) {
+    console.log("Error connecting the Database: ", error);
+    // status code 1 means failure, 0 success
+    process.exit(1);
+  }
+}
