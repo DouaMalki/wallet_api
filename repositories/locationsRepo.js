@@ -35,7 +35,7 @@ export async function getLocationsByCityId(cityId) {
   return rows; // Neon بيرجع array of rows
 }
 
-export async function listLocations({ cityId, limit = 50 }) {
+export async function listLocations({ cityId, limit = null }) {
   const rows = await sql`
     SELECT
       l.*,
@@ -49,7 +49,8 @@ export async function listLocations({ cityId, limit = 50 }) {
     ${cityId ? sql`WHERE l.city_id = ${cityId}` : sql``}
     GROUP BY l.id
     ORDER BY l.created_at DESC
-    LIMIT ${limit};
+    // LIMIT ${limit};
+    ${limit ? sql`LIMIT ${limit}` : sql``};
   `;
 
   return rows.map(mapLocationRow);

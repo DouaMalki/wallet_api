@@ -25,9 +25,21 @@ export async function getLocations(req, res) {
     try {
         const { cityId, limit } = req.query;
 
+        // limit اختياري:
+        // - إذا المستخدم ما بعته => null (يعني بدون LIMIT)
+        // - إذا بعته => رقم
+        const parsedLimit =
+            limit === undefined || limit === null || limit === ""
+                ? null
+                : Number(limit);
+
+        // لو بعث قيمة غلط (NaN أو <=0) اعتبريه بدون limit
+        const safeLimit =
+            Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
+
         const rows = await listLocations({
             cityId,
-            limit: limit ? Number(limit) : 50,
+            limit: safeLimit,
         });
 
         res.status(200).json(rows);
@@ -36,3 +48,6 @@ export async function getLocations(req, res) {
         res.status(500).json({ message: "Internal server error" });
     }
 }
+// /api/locations?cityId=ramallah → يرجّع كل رام الله
+
+// /api/locations?cityId=ramallah&limit=50 → يرجّع 50 
