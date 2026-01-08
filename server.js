@@ -9,6 +9,7 @@ import reportsRouter from "./routers/reportsRouter.js";
 import locationsRouter from "./routers/locationsRouter.js";
 import authenticationRouter from "./routers/authenticationRouter.js";
 import usersRouter from "./routers/usersRouter.js";
+import adminRouter from "./routers/adminRouter.js";
 
 
 const app = express();
@@ -29,6 +30,10 @@ app.use("/api/reports", reportsRouter);
 app.use("/api/users", usersRouter);
 app.use("/api", authenticationRouter);
 app.use("/api/locations", locationsRouter);
+
+app.use("/api/admin", adminRouter);
+
+
 
 console.log("✅ server.js loaded - mounting /api/locations");
 
