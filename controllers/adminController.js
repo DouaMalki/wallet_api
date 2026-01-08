@@ -81,3 +81,133 @@ export async function getAllTripTypes(req, res) {
     res.status(500).json({ message: "Internal server error" });
   }
 }
+
+// Admin: Add a new location
+export async function addLocation(req, res) {
+  try {
+    const {
+      city_id,
+      name,
+      category,
+      google_place_id,
+      lat,
+      lng,
+      estimated_time,
+      max_cost,
+      rating,
+      open_hours = {},
+      closed_days = [],
+      recommended_for = [],
+    } = req.body;
+
+    if (!city_id || !name || !category) {
+      return res.status(400).json({
+        message: "city_id, name, and category are required",
+      });
+    }
+
+    const result = await sql`
+      INSERT INTO locations (
+        city_id,
+        name,
+        category,
+        google_place_id,
+        lat,
+        lng,
+        estimated_time,
+        max_cost,
+        rating,
+        open_hours,
+        closed_days,
+        recommended_for
+      )
+      VALUES (
+        ${city_id},
+        ${name},
+        ${category},
+        ${google_place_id},
+        ${lat},
+        ${lng},
+        ${estimated_time},
+        ${max_cost},
+        ${rating},
+        ${open_hours},
+        ${closed_days},
+        ${recommended_for}
+      )
+      RETURNING *
+    `;
+
+    res.status(201).json({
+      message: "Location added successfully",
+      location: result[0],
+    });
+  } catch (err) {
+    console.error("Add location error:", err);
+
+    if (err.code === "23505") {
+      return res.status(409).json({
+        message: "Location with this Google Place ID already exists",
+      });
+    }
+
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+// Admin: Delete a location
+export async function deleteLocation(req, res) {
+  try {
+    const { id } = req.params;
+
+    const result = await sql`
+      DELETE FROM locations
+      WHERE id = ${id}
+      RETURNING id, name
+    `;
+
+    if (result.length === 0) {
+      return res.status(404).json({
+        message: "Location not found",
+      });
+    }
+
+    res.json({
+      message: "Location deleted successfully",
+      deletedLocation: result[0],
+    });
+  } catch (err) {
+    console.error("Delete location error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+// Admin: Get all locations
+export async function getAllLocations(req, res) {
+  try {
+    const locations = await sql`
+      SELECT
+        id,
+        city_id,
+        name,
+        category,
+        google_place_id,
+        lat,
+        lng,
+        estimated_time,
+        max_cost,
+        rating,
+        open_hours,
+        closed_days,
+        recommended_for,
+        created_at
+      FROM locations
+      ORDER BY created_at DESC
+    `;
+
+    res.json(locations);
+  } catch (err) {
+    console.error("Get locations error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
