@@ -12,6 +12,8 @@ import usersRouter from "./routers/usersRouter.js";
 import citiesRouter from "./routers/citiesRouter.js";
 import tripTypesRouter from "./routers/tripTypesRouter.js";
 import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
+import adminRouter from "./routers/adminRouter.js";
+
 
 
 const app = express();
@@ -36,6 +38,10 @@ app.use("/api/locations", locationsRouter);
 app.use("/api/cities", citiesRouter);
 app.use("/api/trip-types", tripTypesRouter);
 app.use("/api/trip-type-rules", tripTypeRulesRouter);
+
+app.use("/api/admin", adminRouter);
+
+
 
 console.log("✅ server.js loaded - mounting /api/locations");
 
