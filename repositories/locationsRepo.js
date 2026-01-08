@@ -35,7 +35,7 @@ export async function getLocationsByCityId(cityId) {
   return rows; // Neon بيرجع array of rows
 }
 
-export async function listLocations({ cityId, limit = null }) {
+export async function listLocations({ cityId, tripType = null, limit = null, offset = null }) {
   const rows = await sql`
     SELECT
       l.*,
@@ -46,11 +46,25 @@ export async function listLocations({ cityId, limit = null }) {
     FROM locations l
     LEFT JOIN location_trip_types ltt ON ltt.location_id = l.id
     LEFT JOIN trip_types tt ON tt.id = ltt.trip_type_id
-    ${cityId ? sql`WHERE l.city_id = ${cityId}` : sql``}
+
+    WHERE 1=1
+    ${cityId ? sql`AND l.city_id = ${cityId}` : sql``}
+
+    ${tripType
+      ? sql`AND EXISTS (
+                SELECT 1
+                FROM location_trip_types ltt2
+                JOIN trip_types tt2 ON tt2.id = ltt2.trip_type_id
+                WHERE ltt2.location_id = l.id
+                  AND tt2.slug = ${tripType}
+              )`
+      : sql``
+    }
+      
     GROUP BY l.id
     ORDER BY l.created_at DESC
-    // LIMIT ${limit};
     ${limit ? sql`LIMIT ${limit}` : sql``};
+     ${offset ? sql`OFFSET ${offset}` : sql``}
   `;
 
   return rows.map(mapLocationRow);

@@ -23,7 +23,7 @@ import { listLocations } from "../repositories/locationsRepo.js";
 
 export async function getLocations(req, res) {
     try {
-        const { cityId, limit } = req.query;
+        const { cityId, tripType, limit, offset } = req.query;
 
         // limit اختياري:
         // - إذا المستخدم ما بعته => null (يعني بدون LIMIT)
@@ -37,15 +37,28 @@ export async function getLocations(req, res) {
         const safeLimit =
             Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
 
+        // offset اختياري
+        const parsedOffset =
+            offset === undefined || offset === null || offset === "" ? null : Number(offset);
+        const safeOffset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : null;
+
+        // tripType نخليه slug lower-case (إذا تبعك أصلاً lowercase)
+        const safeTripType =
+            typeof tripType === "string" && tripType.trim()
+                ? tripType.trim().toLowerCase()
+                : null;
+
         const rows = await listLocations({
-            cityId,
+            cityId: cityId || null,
+            tripType: safeTripType,
             limit: safeLimit,
+            offset: safeOffset,
         });
 
-        res.status(200).json(rows);
+        return res.status(200).json(rows);
     } catch (error) {
         console.log("Error getting locations:", error);
-        res.status(500).json({ message: "Internal server error" });
+        return res.status(500).json({ message: "Internal server error" });
     }
 }
 // /api/locations?cityId=ramallah → يرجّع كل رام الله
