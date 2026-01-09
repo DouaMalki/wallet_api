@@ -1,14 +1,33 @@
 import { sql } from "../config/db.js";
+import { getAuth } from "firebase-admin/auth";
 
+/* =========================================================
+   SIGN UP USER
+   - Firebase is the source of truth
+   - UID is extracted from verified ID token
+========================================================= */
 export async function signUpUser(req, res) {
   try {
-    const { firebase_uid, name, email } = req.body;
+    const authHeader = req.headers.authorization;
 
-    if (!firebase_uid || !name || !email) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "Missing or invalid auth token" });
+    }
+
+    const idToken = authHeader.split(" ")[1];
+
+    // Verify Firebase token
+    const decoded = await getAuth().verifyIdToken(idToken);
+
+    const firebase_uid = decoded.uid;
+    const email = decoded.email;
+    const { name } = req.body;
+
+    if (!name) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    // Insert new user
+    // Insert user if not exists
     const inserted = await sql`
       INSERT INTO users (
         firebase_uid,
@@ -24,25 +43,65 @@ export async function signUpUser(req, res) {
         ${email},
         CURRENT_TIMESTAMP
       )
-      RETURNING user_id, name, email, points, level
+      ON CONFLICT (firebase_uid) DO NOTHING
+      RETURNING
+        user_id,
+        role,
+        name,
+        email,
+        theme,
+        language,
+        points,
+        level
     `;
+
+    // If user already exists, return existing user
+    if (inserted.length === 0) {
+      const existing = await sql`
+        SELECT
+          user_id,
+          role,
+          name,
+          email,
+          theme,
+          language,
+          points,
+          level
+        FROM users
+        WHERE firebase_uid = ${firebase_uid}
+      `;
+      return res.json(existing[0]);
+    }
+
     res.json(inserted[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Signup error:", err);
     res.status(500).json({ message: "Signup failed" });
   }
 }
 
+/* =========================================================
+   LOGIN USER
+   - Firebase token verification
+   - Correct blocked-user handling
+   - Correct RETURNING logic
+========================================================= */
 export async function loginUser(req, res) {
   try {
-    const { firebase_uid } = req.body;
+    const authHeader = req.headers.authorization;
 
-    if (!firebase_uid) {
-      return res.status(400).json({ message: "Missing firebase UID" });
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "Missing or invalid auth token" });
     }
 
+    const idToken = authHeader.split(" ")[1];
 
-    const result = await sql`
+    // Verify Firebase token
+    const decoded = await getAuth().verifyIdToken(idToken);
+    const firebase_uid = decoded.uid;
+
+    // Unblock user if block expired
+    await sql`
       UPDATE users
       SET
         is_blocked = false,
@@ -53,7 +112,7 @@ export async function loginUser(req, res) {
         AND blocked_until < NOW()
     `;
 
-    // 2️- Check if user is still blocked (JJ)
+    // Check block status
     const blockedCheck = await sql`
       SELECT is_blocked, blocked_until
       FROM users
@@ -71,7 +130,7 @@ export async function loginUser(req, res) {
       });
     }
 
-    // Update last_login date
+    // Update last login and return user
     const updated = await sql`
       UPDATE users
       SET last_login = CURRENT_TIMESTAMP
@@ -88,11 +147,12 @@ export async function loginUser(req, res) {
         is_blocked,
         blocked_until
     `;
-    if (result.length === 0) {
+
+    if (updated.length === 0) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json(result[0]);
+    res.json(updated[0]);
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Login failed" });
