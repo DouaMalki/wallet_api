@@ -51,7 +51,6 @@ export async function loginUser(req, res) {
         AND blocked_until IS NOT NULL
         AND blocked_until < NOW()
     `;
-
     // 2️- Check if user is still blocked
     const blockedCheck = await sql`
       SELECT is_blocked, blocked_until
@@ -87,11 +86,11 @@ export async function loginUser(req, res) {
         is_blocked,
         blocked_until
     `;
-    if (result.length === 0) {
+    if (updated.length === 0) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json(result[0]);
+    res.json(updated[0]);
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Login failed" });
