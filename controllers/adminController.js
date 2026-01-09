@@ -68,6 +68,21 @@ export async function updateSystemSettings(req, res) {
   }
 }
 
+export async function getCurrentSystemSettings(req, res) {
+  const result = await sql`
+    SELECT *
+    FROM system_settings
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+
+  res.json(result[0]);
+}
+
+
+
+
+
 // // Admin: Add a new trip type
 // export async function addTripType(req, res) {
 //   try {

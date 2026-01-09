@@ -7,11 +7,14 @@ import {
 //   deleteLocation,
 //   getAllLocations,
   updateSystemSettings,
+  getCurrentSystemSettings,
 } from "../controllers/adminController.js";
 
 const router = express.Router();
 
 router.post("/system-settings", updateSystemSettings);
+router.get("/system-settings", getCurrentSystemSettings);
+
 
 
 // // Admin routes
