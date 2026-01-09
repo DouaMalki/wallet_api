@@ -37,7 +37,7 @@ app.use("/api", authenticationRouter);
 app.use("/api/locations", locationsRouter);
 app.use("/api/cities", citiesRouter);
 app.use("/api/trip-types", tripTypesRouter);
-app.use("/api/trip-type-rules", tripTypeRulesRouter);
+app.use("/api/trip_type_rules", tripTypeRulesRouter);
 
 app.use("/api/admin", adminRouter);
 

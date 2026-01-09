@@ -1,5 +1,4 @@
 import { listTripTypes } from "../repositories/tripTypesRepo.js";
-import { sql } from "../config/db.js";
 
 // export async function getTripTypes(req, res) {
 //     try {
@@ -14,13 +13,8 @@ import { sql } from "../config/db.js";
 
 export async function getTripTypes(req, res) {
     try {
-        const { rows } = await sql.query(
-            `SELECT id, slug, name_en, name_ar
-       FROM trip_types
-       ORDER BY id ASC`
-        );
-
-        res.json(rows);
+        const tripTypes = await listTripTypes();
+        res.status(200).json(tripTypes);
     } catch (err) {
         console.error("getTripTypes error:", err);
         res.status(500).json({ message: "Failed to fetch trip types" });
