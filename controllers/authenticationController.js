@@ -4,7 +4,7 @@ export async function signUpUser(req, res) {
   try {
     const { firebase_uid, name, email } = req.body;
 
-    if (!firebase_uid) {
+    if (!firebase_uid || !name || !email) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
@@ -41,20 +41,29 @@ export async function loginUser(req, res) {
       return res.status(400).json({ message: "Missing firebase UID" });
     }
 
-    // Update last_login date
-    const updated = await sql`
+    const result = await sql`
       UPDATE users
       SET last_login = CURRENT_TIMESTAMP
       WHERE firebase_uid = ${firebase_uid}
-      RETURNING user_id, name, email, points, level
+      RETURNING
+        user_id,
+        role,
+        name,
+        email,
+        theme,
+        language,
+        points,
+        level,
+        is_blocked,
+        blocked_until
     `;
-
-    if (updated.length === 0) {
+    if (result.length === 0) {
       return res.status(404).json({ message: "User not found" });
     }
-    res.json(updated[0]);
+
+    res.json(result[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Login error:", err);
     res.status(500).json({ message: "Login failed" });
   }
 }

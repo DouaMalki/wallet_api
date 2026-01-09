@@ -7,7 +7,6 @@ import {
 
 const router = express.Router();
 
-// sync the user after authentication (login or sign up)
 router.post("/authentication/signup", signUpUser);
 router.post("/authentication/login", loginUser);
 
