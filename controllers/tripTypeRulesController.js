@@ -1,10 +1,10 @@
-import { pool } from "../db.js"; // عدّلي حسب مشروعك
+import { sql } from "../config/db.js";
 
 export async function getRulesBySlug(req, res) {
     try {
         const { slug } = req.params;
 
-        const { rows } = await pool.query(
+        const { rows } = await sql.query(
             `
       SELECT tt.slug, tr.rule_json
       FROM trip_types tt
