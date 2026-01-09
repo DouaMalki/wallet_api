@@ -71,8 +71,7 @@ export async function getLocationsByCityId(cityId) {
 // }
 
 // wallet_api/repositories/locationsRepo.js
-import { sql } from "../config/db.js";
-import { mapLocationRow } from "../mappers/locationMapper.js";
+
 
 export async function listLocations({ cityId = null, tripType = null, limit = null, offset = null }) {
   const rows = await sql`
