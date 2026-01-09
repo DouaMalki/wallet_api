@@ -1,5 +1,19 @@
 import { sql } from "../config/db.js";
 
+function mergeJson(current, changes) {
+  const merged = { ...current };
+
+  for (const key in changes) {
+    if (changes[key] === null) {
+      delete merged[key]; // remove
+    } else {
+      merged[key] = changes[key]; // add or update
+    }
+  }
+
+  return merged;
+}
+
 export async function updateSystemSettings(req, res) {
   try {
     const {
@@ -9,7 +23,6 @@ export async function updateSystemSettings(req, res) {
       destinations,
     } = req.body;
 
-    // Get latest settings
     const latest = await sql`
       SELECT *
       FROM system_settings
@@ -19,26 +32,41 @@ export async function updateSystemSettings(req, res) {
 
     if (latest.length === 0) {
       return res.status(400).json({
-        message: "No system settings found",
+        message: "System settings not initialized",
       });
     }
 
     const current = latest[0];
 
-    // Detect changes
+    // Merge instead of replace
+    const newMemberTypes = member_types
+      ? mergeJson(current.member_types, member_types)
+      : current.member_types;
+
+    const newTripTypes = trip_types
+      ? mergeJson(current.trip_types, trip_types)
+      : current.trip_types;
+
+    const newProblemTypes = problem_types
+      ? mergeJson(current.problem_types, problem_types)
+      : current.problem_types;
+
+    const newDestinations = destinations
+      ? mergeJson(current.destinations, destinations)
+      : current.destinations;
+
+    // Detect real change
     const hasChanges =
-      JSON.stringify(member_types ?? current.member_types) !== JSON.stringify(current.member_types) ||
-      JSON.stringify(trip_types ?? current.trip_types) !== JSON.stringify(current.trip_types) ||
-      JSON.stringify(problem_types ?? current.problem_types) !== JSON.stringify(current.problem_types) ||
-      JSON.stringify(destinations ?? current.destinations) !== JSON.stringify(current.destinations);
+      JSON.stringify(newMemberTypes) !== JSON.stringify(current.member_types) ||
+      JSON.stringify(newTripTypes) !== JSON.stringify(current.trip_types) ||
+      JSON.stringify(newProblemTypes) !== JSON.stringify(current.problem_types) ||
+      JSON.stringify(newDestinations) !== JSON.stringify(current.destinations);
 
     if (!hasChanges) {
-      return res.status(200).json({
-        message: "No changes detected. Settings were not updated.",
-      });
+      return res.json({ message: "No changes detected" });
     }
 
-    // Insert new row (versioning)
+    // insert new version
     const result = await sql`
       INSERT INTO system_settings (
         member_types,
@@ -47,26 +75,24 @@ export async function updateSystemSettings(req, res) {
         destinations
       )
       VALUES (
-        ${member_types ?? current.member_types},
-        ${trip_types ?? current.trip_types},
-        ${problem_types ?? current.problem_types},
-        ${destinations ?? current.destinations}
+        ${newMemberTypes},
+        ${newTripTypes},
+        ${newProblemTypes},
+        ${newDestinations}
       )
       RETURNING *
     `;
 
     res.status(201).json({
-      message: "System settings updated successfully",
+      message: "System settings updated",
       settings: result[0],
     });
   } catch (err) {
     console.error("Update system settings error:", err);
-    res.status(500).json({
-      message: "Internal server error",
-      error: err.message,
-    });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
+
 
 export async function getCurrentSystemSettings(req, res) {
   const result = await sql`
