@@ -42,18 +42,7 @@ export async function signUpUser(req, res) {
         ${name},
         ${email},
         CURRENT_TIMESTAMP
-      )
-      ON CONFLICT (firebase_uid) DO NOTHING
-      RETURNING
-        user_id,
-        role,
-        name,
-        email,
-        theme,
-        language,
-        points,
-        level
-    `;
+      )`;
 
     // If user already exists, return existing user
     if (inserted.length === 0) {
