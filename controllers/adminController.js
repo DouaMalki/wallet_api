@@ -14,6 +14,7 @@ function mergeJson(current, changes) {
   return merged;
 }
 
+// function to update system settings
 export async function updateSystemSettings(req, res) {
   try {
     const {
@@ -103,6 +104,52 @@ export async function getCurrentSystemSettings(req, res) {
   `;
 
   res.json(result[0]);
+}
+
+async function getLatestSettings() {
+  const result = await sql`
+    SELECT *
+    FROM system_settings
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  return result[0];
+}
+
+export async function getMemberTypes(req, res) {
+  try {
+    const settings = await getLatestSettings();
+    res.json(settings.member_types);
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function getTripTypes(req, res) {
+  try {
+    const settings = await getLatestSettings();
+    res.json(settings.trip_types);
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function getProblemTypes(req, res) {
+  try {
+    const settings = await getLatestSettings();
+    res.json(settings.problem_types);
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function getDestinations(req, res) {
+  try {
+    const settings = await getLatestSettings();
+    res.json(settings.destinations);
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
+  }
 }
 
 
