@@ -41,11 +41,8 @@ export async function loginUser(req, res) {
       return res.status(400).json({ message: "Missing firebase UID" });
     }
 
-<<<<<<< HEAD
+
     const result = await sql`
-=======
-    // 1️- Auto-unblock user if block expired (JJ)
-    await sql`
       UPDATE users
       SET
         is_blocked = false,
@@ -76,7 +73,6 @@ export async function loginUser(req, res) {
 
     // Update last_login date
     const updated = await sql`
->>>>>>> d8955c4518b175922014ac0b2ca66cc5077aa655
       UPDATE users
       SET last_login = CURRENT_TIMESTAMP
       WHERE firebase_uid = ${firebase_uid}
