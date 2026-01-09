@@ -6,6 +6,6 @@ import {
 
 const router = express.Router();
 
-router.post("/editProfile", editProfile);
+router.put("/editProfile", editProfile);
 
 export default router;
