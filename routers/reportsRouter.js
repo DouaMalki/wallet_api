@@ -14,7 +14,7 @@ import {
 
 const router = express.Router();
 
-// Survey related reports
+// Survey related reports 
 router.get("/survey", getSurveyReports);
 // Trip related reports
 router.get("/trips", getTripReports);
