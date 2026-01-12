@@ -1,98 +1,67 @@
 import { sql } from "../config/db.js";
 
-export async function signUpUser(req, res) {
+// Sign Up controller
+export async function signUp(req, res) {
+  const { firebase_uid, name, email } = req.body;
+  if (!firebase_uid || !name || !email) {
+    return res.status(400).json({
+      message: "Missing required fields"
+    });
+  }
+
   try {
-    const { firebase_uid, name, email } = req.body;
-
-    if (!firebase_uid || !name || !email) {
-      return res.status(400).json({ message: "Missing required fields" });
-    }
-
-    // Insert new user
-    const inserted = await sql`
+    const result = await sql`
       INSERT INTO users (
         firebase_uid,
         role,
         name,
-        email,
-        last_login
+        email
       )
       VALUES (
         ${firebase_uid},
         'user',
         ${name},
-        ${email},
-        CURRENT_TIMESTAMP
+        ${email}
       )
-      RETURNING user_id, name, email, points, level
+      RETURNING *
     `;
-    res.json(inserted[0]);
+    const user = result[0];
+    res.status(201).json(user);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Signup failed" });
+    console.error("Sign up controller error:", err);
+    res.status(500).json({
+      message: "Sign up controller error"
+    });
   }
 }
 
-export async function loginUser(req, res) {
+
+// Login controller
+export async function login(req, res) {
+  const { firebase_uid } = req.body;
+  if (!firebase_uid) {
+    return res.status(400).json({
+      message: "Missing firebase_uid",
+    });
+  }
+
   try {
-    const { firebase_uid } = req.body;
-
-    if (!firebase_uid) {
-      return res.status(400).json({ message: "Missing firebase UID" });
-    }
-
-    await sql`
-      UPDATE users
-      SET
-        is_blocked = false,
-        blocked_until = NULL
-      WHERE firebase_uid = ${firebase_uid}
-        AND is_blocked = true
-        AND blocked_until IS NOT NULL
-        AND blocked_until < NOW()
-    `;
-    // 2️- Check if user is still blocked
-    const blockedCheck = await sql`
-      SELECT is_blocked, blocked_until
+    const result = await sql`
+      SELECT *
       FROM users
       WHERE firebase_uid = ${firebase_uid}
     `;
-
-    if (blockedCheck.length === 0) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (blockedCheck[0].is_blocked) {
-      return res.status(403).json({
-        message: "User is temporarily blocked",
-        blocked_until: blockedCheck[0].blocked_until,
+    if (result.length === 0) {
+      return res.status(404).json({
+        message: "User not found in database",
       });
     }
-
-    // Update last_login date
-    const updated = await sql`
-      UPDATE users
-      SET last_login = CURRENT_TIMESTAMP
-      WHERE firebase_uid = ${firebase_uid}
-      RETURNING
-        user_id,
-        role,
-        name,
-        email,
-        theme,
-        language,
-        points,
-        level,
-        is_blocked,
-        blocked_until
-    `;
-    if (updated.length === 0) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.json(updated[0]);
+    const user = result[0];
+    res.json(user);
   } catch (err) {
-    console.error("Login error:", err);
-    res.status(500).json({ message: "Login failed" });
+    console.error("Login controller error:", err);
+    res.status(500).json({
+      message: "Login controller error",
+    });
   }
 }
