@@ -8,9 +8,7 @@ import reportsRouter from "./routers/reportsRouter.js";
 import locationsRouter from "./routers/locationsRouter.js";
 import authenticationRouter from "./routers/authenticationRouter.js";
 import editProfileRouter from "./routers/editProfileRouter.js";
-
 import usersRouter from "./routers/usersRouter.js";
-import locationsRouter from "./routers/locationsRouter.js";
 import citiesRouter from "./routers/citiesRouter.js";
 import tripTypesRouter from "./routers/tripTypesRouter.js";
 import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
