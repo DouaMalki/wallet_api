@@ -1,14 +1,13 @@
 import express from "express";
 import {
-  signUpUser,
-  loginUser
+  signUp,
+  login
 } from "../controllers/authenticationController.js";
 
 
 const router = express.Router();
 
-// sync the user after authentication (login or sign up)
-router.post("/authentication/signup", signUpUser);
-router.post("/authentication/login", loginUser);
+router.post("/authentication/signup", signUp);
+router.post("/authentication/login", login);
 
 export default router;

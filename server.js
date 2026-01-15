@@ -7,14 +7,15 @@ import job from "./config/cron.js";
 import reportsRouter from "./routers/reportsRouter.js";
 import locationsRouter from "./routers/locationsRouter.js";
 import authenticationRouter from "./routers/authenticationRouter.js";
+import editProfileRouter from "./routers/editProfileRouter.js";
+
 import usersRouter from "./routers/usersRouter.js";
+import locationsRouter from "./routers/locationsRouter.js";
 import citiesRouter from "./routers/citiesRouter.js";
 import tripTypesRouter from "./routers/tripTypesRouter.js";
 import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
 import adminRouter from "./routers/adminRouter.js";
 import categoriesRouter from "./routers/categoriesRouter.js";
-
-
 
 
 const app = express();
@@ -33,8 +34,10 @@ app.get("/api/health", (req, res) => {
 
 // routers used by the express app
 app.use("/api/reports", reportsRouter);
-app.use("/api/users", usersRouter);
 app.use("/api", authenticationRouter);
+app.use("/api", editProfileRouter);
+
+app.use("/api/users", usersRouter);
 app.use("/api/locations", locationsRouter);
 app.use("/api/cities", citiesRouter);
 app.use("/api/trip-types", tripTypesRouter);
@@ -45,7 +48,6 @@ app.use("/api/admin", adminRouter);
 
 
 console.log("✅ server.js loaded - mounting /api/locations");
-
 
 
 // To test that the application connected to the database
