@@ -79,7 +79,13 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
       l.id,
       l.city_id,
       l.name,
-      l.category,
+      // l.category,
+       -- الجديد: التصنيف عبر categories
+      l.category_id,
+      c.slug  AS category_slug,
+      c.name  AS category_name,
+      c.name_ar AS category_name_ar,
+      -- l.category,
       l.google_place_id,
       l.lat,
       l.lng,
@@ -91,6 +97,8 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
       l.recommended_for,
       COALESCE(tt.trip_types, ARRAY[]::text[]) AS trip_types
     FROM locations l
+        LEFT JOIN categories c ON c.id = l.category_id
+
     LEFT JOIN LATERAL (
       SELECT
         ARRAY_AGG(DISTINCT tt.slug) FILTER (WHERE tt.slug IS NOT NULL) AS trip_types

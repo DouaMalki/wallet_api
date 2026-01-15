@@ -5,7 +5,11 @@ export function mapLocationRow(row) {
         cityId: row.city_id,
 
         name: row.name,
-        category: row.category,
+        //category: row.category,
+        categoryId: row.category_id ?? null,
+        categorySlug: row.category_slug ?? null,
+        categoryName: row.category_name ?? null,
+        categoryNameAr: row.category_name_ar ?? null,
 
         googlePlaceId: row.google_place_id,
 
