@@ -28,20 +28,23 @@ app.get("/api/health", (req, res) => {
 
 
 
-
-// routers used by the express app
+// routers created by doua
 app.use("/api/reports", reportsRouter);
 app.use("/api", authenticationRouter);
 app.use("/api", editProfileRouter);
 
+
+
+// routers created by jenin
 app.use("/api/users", usersRouter);
+app.use("/api/admin", adminRouter);
+
+
+// routers created by shahd
 app.use("/api/locations", locationsRouter);
 app.use("/api/cities", citiesRouter);
 app.use("/api/trip-types", tripTypesRouter);
 app.use("/api/trip_type_rules", tripTypeRulesRouter);
-
-app.use("/api/admin", adminRouter);
-
 
 
 console.log("✅ server.js loaded - mounting /api/locations");
