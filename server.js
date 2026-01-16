@@ -13,13 +13,8 @@ import citiesRouter from "./routers/citiesRouter.js";
 import tripTypesRouter from "./routers/tripTypesRouter.js";
 import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
 import adminRouter from "./routers/adminRouter.js";
-<<<<<<< HEAD
+import categoriesRouter from "./routers/categoriesRouter.js"; 
 
-import saveRouter from "./routers/saveRouter.js";
-
-=======
-import categoriesRouter from "./routers/categoriesRouter.js";
->>>>>>> e1e6c9a3261c2ea740f8401d23126897a2ead941
 
 
 const app = express();
@@ -49,7 +44,6 @@ app.use("/api/trip_type_rules", tripTypeRulesRouter);
 app.use("/api/categories", categoriesRouter);
 
 app.use("/api/admin", adminRouter);
-
 
 
 console.log("✅ server.js loaded - mounting /api/locations");
