@@ -14,6 +14,8 @@ import tripTypesRouter from "./routers/tripTypesRouter.js";
 import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
 import adminRouter from "./routers/adminRouter.js";
 
+import saveRouter from "./routers/saveRouter.js";
+
 
 
 const app = express();
@@ -41,7 +43,7 @@ app.use("/api/trip_type_rules", tripTypeRulesRouter);
 
 app.use("/api/admin", adminRouter);
 
-
+app.use("/api/saved-locations", saveRouter);
 
 console.log("✅ server.js loaded - mounting /api/locations");
 
