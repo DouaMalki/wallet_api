@@ -57,7 +57,14 @@ export async function getLocations(req, res) {
 
         return res.status(200).json(rows);
     } catch (error) {
-        console.log("Error getting locations:", error);
+        console.error("Error getting locations:", {
+            message: error?.message,
+            code: error?.code,
+            detail: error?.detail,
+            hint: error?.hint,
+            where: error?.where,
+            stack: error?.stack,
+        });
         return res.status(500).json({ message: "Internal server error" });
     }
 }

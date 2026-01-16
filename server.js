@@ -5,15 +5,16 @@ import rateLimiter from "./middleware/rateLimiter.js";
 import job from "./config/cron.js";
 // routers that will be used by the express app
 import reportsRouter from "./routers/reportsRouter.js";
+import locationsRouter from "./routers/locationsRouter.js";
 import authenticationRouter from "./routers/authenticationRouter.js";
 import editProfileRouter from "./routers/editProfileRouter.js";
-
 import usersRouter from "./routers/usersRouter.js";
-import locationsRouter from "./routers/locationsRouter.js";
 import citiesRouter from "./routers/citiesRouter.js";
 import tripTypesRouter from "./routers/tripTypesRouter.js";
 import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
 import adminRouter from "./routers/adminRouter.js";
+import categoriesRouter from "./routers/categoriesRouter.js";
+
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
@@ -45,6 +46,7 @@ app.use("/api/locations", locationsRouter);
 app.use("/api/cities", citiesRouter);
 app.use("/api/trip-types", tripTypesRouter);
 app.use("/api/trip_type_rules", tripTypeRulesRouter);
+app.use("/api/categories", categoriesRouter);
 
 
 console.log("✅ server.js loaded - mounting /api/locations");
