@@ -14,7 +14,7 @@ import tripTypesRouter from "./routers/tripTypesRouter.js";
 import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
 import adminRouter from "./routers/adminRouter.js";
 import categoriesRouter from "./routers/categoriesRouter.js";
-
+import surveyRouter from "./routers/surveyRouter.js";
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
@@ -33,7 +33,7 @@ app.get("/api/health", (req, res) => {
 app.use("/api/reports", reportsRouter);
 app.use("/api", authenticationRouter);
 app.use("/api", editProfileRouter);
-
+app.use("/api", surveyRouter);
 
 
 // routers created by jenin
