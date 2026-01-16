@@ -15,7 +15,7 @@ import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
 import adminRouter from "./routers/adminRouter.js";
 import saveRouter from "./routers/saveRouter.js";
 import categoriesRouter from "./routers/categoriesRouter.js";
-
+import surveyRouter from "./routers/surveyRouter.js";
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
@@ -30,20 +30,24 @@ app.get("/api/health", (req, res) => {
 
 
 
-
-// routers used by the express app
+// routers created by doua
 app.use("/api/reports", reportsRouter);
 app.use("/api", authenticationRouter);
 app.use("/api", editProfileRouter);
+app.use("/api", surveyRouter);
 
+
+// routers created by jenin
 app.use("/api/users", usersRouter);
+app.use("/api/admin", adminRouter);
+
+
+// routers created by shahd
 app.use("/api/locations", locationsRouter);
 app.use("/api/cities", citiesRouter);
 app.use("/api/trip-types", tripTypesRouter);
 app.use("/api/trip_type_rules", tripTypeRulesRouter);
 app.use("/api/categories", categoriesRouter);
-
-app.use("/api/admin", adminRouter);
 
 
 app.use("/api/saved-locations", saveRouter);
