@@ -50,7 +50,7 @@ app.use("/api/trip_type_rules", tripTypeRulesRouter);
 app.use("/api/categories", categoriesRouter);
 
 
-app.use("/api/saved-locations", saveRouter);
+// app.use("/api/saved-locations", saveRouter);
 
 console.log("✅ server.js loaded - mounting /api/locations");
 
