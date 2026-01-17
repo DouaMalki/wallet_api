@@ -1,16 +1,14 @@
 import { sql } from "../config/db.js";
 
-// SurveyRelatedReports controller
+/* SurveyRelatedReports */
 export async function getSurveyReports(req, res) {
   try {
-    const result = await sql`
+    const report = (await sql`
       SELECT answered_surveys, finished_trips, main_problem
       FROM reports
       ORDER BY created_at DESC
       LIMIT 1
-    `;
-
-    const report = result[0];
+    `)[0];
 
     res.json({
       answered: report.answered_surveys,
@@ -18,39 +16,61 @@ export async function getSurveyReports(req, res) {
       problems: report.main_problem
     });
   } catch (err) {
-    console.log("Internal server error", err);
+    console.error("Survey report error", err);
     res.status(500).json({ message: "Internal server error" });
   }
 }
 
-// TripRelatedReports controller
+/* TripRelatedReports (USES cities & trip_types) */
 export async function getTripReports(req, res) {
   try {
-    const result = await sql`
-      SELECT members, visited_destinations, trip_type
+    // Members distribution (still from reports)
+    const report = (await sql`
+      SELECT members
       FROM reports
       ORDER BY created_at DESC
       LIMIT 1
+    `)[0];
+
+    // Cities popularity
+    const citiesRows = await sql`
+      SELECT id, name, number_of_triggers
+      FROM cities
+      ORDER BY number_of_triggers DESC
     `;
 
-    const report = result[0];
+    // Trip types popularity
+    const tripTypesRows = await sql`
+      SELECT id, name, number_of_triggers
+      FROM trip_types
+      ORDER BY number_of_triggers DESC
+    `;
 
     res.json({
       travelerTypes: report.members,
-      destinations: report.visited_destinations,
-      tripTypes: report.trip_type
+
+      destinations: citiesRows.map(c => ({
+        id: c.id,
+        label: c.name,
+        value: c.number_of_triggers
+      })),
+
+      tripTypes: tripTypesRows.map(t => ({
+        id: t.id,
+        label: t.name,
+        value: t.number_of_triggers
+      }))
     });
   } catch (err) {
-    console.log("Trip report error", err);
+    console.error("Trip report error", err);
     res.status(500).json({ message: "Internal server error" });
   }
 }
 
-// SystemGrowthReports controller
+/* SystemGrowthReports */
 export async function getSystemGrowth(req, res) {
   try {
-    // 1. Monthly growth (last 12 months)
-    const monthlyResult = await sql`
+    const monthly = await sql`
       SELECT
         TO_CHAR(created_at, 'Mon') AS label,
         COUNT(*)::int AS value,
@@ -61,49 +81,40 @@ export async function getSystemGrowth(req, res) {
       ORDER BY order_date
     `;
 
-    // 2. Total users
-    const totalUsersResult = await sql`
-      SELECT COUNT(*)::int AS total
-      FROM users
-    `;
+    const totalUsers = (await sql`
+      SELECT COUNT(*)::int AS total FROM users
+    `)[0].total;
 
-    // 3. Users registered last year
-    const lastYearResult = await sql`
+    const lastYearUsers = (await sql`
       SELECT COUNT(*)::int AS total
       FROM users
-      WHERE created_at >= DATE_TRUNC('year', CURRENT_DATE)
-        - INTERVAL '1 year'
+      WHERE created_at >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year'
         AND created_at < DATE_TRUNC('year', CURRENT_DATE)
-    `;
+    `)[0].total;
 
-    // 4. Users registered last month
-    const lastMonthResult = await sql`
+    const lastMonthUsers = (await sql`
       SELECT COUNT(*)::int AS total
       FROM users
       WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
         AND created_at < DATE_TRUNC('month', CURRENT_DATE)
-    `;
+    `)[0].total;
 
     res.json({
-      growth: monthlyResult.map(r => ({
-        label: r.label,
-        value: r.value
-      })),
-      totalUsers: totalUsersResult[0].total,
-      lastYearUsers: lastYearResult[0].total,
-      lastMonthUsers: lastMonthResult[0].total
+      growth: monthly.map(r => ({ label: r.label, value: r.value })),
+      totalUsers,
+      lastYearUsers,
+      lastMonthUsers
     });
-
   } catch (err) {
-    console.log("System growth error", err);
+    console.error("System growth error", err);
     res.status(500).json({ message: "Internal server error" });
   }
 }
 
-// UsersActivityReports controller
+/* UsersActivityReports */
 export async function getUsersActivity(req, res) {
   try {
-    const result = await sql`
+    const rows = await sql`
       SELECT
         TO_CHAR(last_login, 'Mon') AS label,
         COUNT(*)::int AS value,
@@ -114,229 +125,152 @@ export async function getUsersActivity(req, res) {
       ORDER BY order_date
     `;
 
-    res.json(result.map(r => ({
+    res.json(rows.map(r => ({
       label: r.label,
       value: r.value
     })));
   } catch (err) {
-    console.log("Users activity error", err);
+    console.error("Users activity error", err);
     res.status(500).json({ message: "Internal server error" });
   }
 }
 
-
-// UsersLevelsReports controller
-export async function getUsersLevelsSummary(req, res) {
-  try {
-    const result = await sql`
-      SELECT level, COUNT(*)::int AS count
-      FROM users
-      GROUP BY level
-    `;
-
-    const summary = {};
-    result.forEach(r => {
-      summary[r.level] = r.count;
-    });
-
-    res.json(summary);
-  } catch (err) {
-    console.log("Levels summary error", err);
-    res.status(500).json({ message: "Internal server error" });
-  }
-}
-export async function getUsersByLevel(req, res) {
-  try {
-    const { level } = req.params;
-
-    const users = await sql`
-      SELECT
-        user_id AS id,
-        name,
-        email,
-        points,
-        level
-      FROM users
-      WHERE level = ${level}
-      ORDER BY points DESC
-    `;
-
-    res.json(users);
-  } catch (err) {
-    console.log("Users by level error", err);
-    res.status(500).json({ message: "Internal server error" });
-  }
-}
-
-
-
-
-
-
-// Create a new report after updating the system settings
+/* After System Settings Update */
 export async function updateReportAfterSystemSettingsUpdate(req, res) {
   try {
-    // Get the latest system settings
     const settings = (await sql`
-      SELECT *
+      SELECT problem_types
       FROM system_settings
       ORDER BY created_at DESC
       LIMIT 1
     `)[0];
-    // Get the latest report
-    const previousReport = (await sql`
+
+    const prev = (await sql`
       SELECT *
       FROM reports
       ORDER BY created_at DESC
       LIMIT 1
     `)[0];
 
-    // Sync function
-    const syncJson = (oldJson = {}, settingsJson = {}) => {
-      const result = {};
-      for (const key of Object.keys(settingsJson)) {
-        result[key] = oldJson[key] ?? 0;
-      }
-      return result;
+    const syncArrayToJson = (oldJson = {}, arr = []) => {
+      const obj = {};
+      arr.forEach(v => {
+        obj[v] = oldJson[v] ?? 0;
+      });
+      return obj;
     };
 
-    // Insert a new report
     await sql`
       INSERT INTO reports (
         members,
-        trip_type,
-        visited_destinations,
         main_problem,
         finished_trips,
         answered_surveys
       )
       VALUES (
-        ${syncJson(previousReport.members, settings.member_types)},
-        ${syncJson(previousReport.trip_type, settings.trip_types)},
-        ${syncJson(previousReport.visited_destinations, settings.destinations)},
-        ${syncJson(previousReport.main_problem, settings.problem_types)},
-        ${previousReport.finished_trips},
-        ${previousReport.answered_surveys}
+        ${prev.members},
+        ${syncArrayToJson(prev.main_problem, settings.problem_types)},
+        ${prev.finished_trips},
+        ${prev.answered_surveys}
       )
     `;
 
     res.json({ message: "New report created successfully" });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Failed to create report" });
   }
 }
 
-
-// Update the latest report after answering or non answering a survey
+/* After Survey Submission */
 export async function updateReportAfterSurvey(req, res) {
   try {
-    const answered = req.body.answered ?? (req.query.answered === "true");
-    const finished = req.body.finished ?? (req.query.finished === "true");
-    const problems =
-      req.body.problems ??
-      (req.query.problems ? req.query.problems.split(",") : []);
+    const answered = req.body.answered ?? false;
+    const finished = req.body.finished ?? false;
+    const problems = req.body.problems ?? [];
 
-
-    // Get the latest report
     const report = (await sql`
       SELECT *
       FROM reports
       ORDER BY created_at DESC
       LIMIT 1
     `)[0];
-    // Copy JSON fields
-    const updatedAnswered = { ...report.answered_surveys };
-    const updatedFinished = { ...report.finished_trips };
-    const updatedProblems = { ...report.main_problem };
 
-    // Update answered surveys
-    updatedAnswered[answered ? "yes" : "no"] =
-      (updatedAnswered[answered ? "yes" : "no"] || 0) + 1;
-    // Update finished trips (ONLY if survey answered)
-    if(answered)
-    {
-      updatedFinished[finished ? "yes" : "no"] =
-      (updatedFinished[finished ? "yes" : "no"] || 0) + 1;
-    }
-    // Update problems (ONLY if survey answered)
+    const answeredSurveys = { ...report.answered_surveys };
+    const finishedTrips = { ...report.finished_trips };
+    const mainProblem = { ...report.main_problem };
+
+    answeredSurveys[answered ? "yes" : "no"] =
+      (answeredSurveys[answered ? "yes" : "no"] || 0) + 1;
+
     if (answered) {
+      finishedTrips[finished ? "yes" : "no"] =
+        (finishedTrips[finished ? "yes" : "no"] || 0) + 1;
+
       problems.forEach(p => {
-        updatedProblems[p] = (updatedProblems[p] || 0) + 1;
+        mainProblem[p] = (mainProblem[p] || 0) + 1;
       });
     }
 
-    // Save updates
     await sql`
       UPDATE reports
       SET
-        answered_surveys = ${updatedAnswered},
-        finished_trips = ${updatedFinished},
-        main_problem = ${updatedProblems}
+        answered_surveys = ${answeredSurveys},
+        finished_trips = ${finishedTrips},
+        main_problem = ${mainProblem}
       WHERE report_id = ${report.report_id}
     `;
-    res.json({ message: "Report updated after survey submission" });
+
+    res.json({ message: "Report updated after survey" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Failed to update report" });
+    res.status(500).json({ message: "Failed to update survey report" });
   }
 }
 
-
-// Update the latest report after submitting a trip form
+/* After Trip Form Submission */
 export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
-    
-    const members =
-      req.body.members ||
-      (req.query.members ? JSON.parse(req.query.members) : {});
-    const trip_type =
-      req.body.trip_type || req.query.trip_type;
-    const destinations =
-      req.body.destinations ||
-      (req.query.destinations
-        ? req.query.destinations.split(",")
-        : []);
+    const members = req.body.members || {};
+    const tripTypeId = req.body.trip_type_id;
+    const cityIds = req.body.city_ids || [];
 
-    // Get the latest report
     const report = (await sql`
       SELECT *
       FROM reports
       ORDER BY created_at DESC
       LIMIT 1
     `)[0];
-    // Clone JSONB fields
+
     const updatedMembers = { ...report.members };
-    const updatedTripTypes = { ...report.trip_type };
-    const updatedDestinations = { ...report.visited_destinations };
-
-    // Update members
-    for (const type in members) {
-      updatedMembers[type] =
-        (updatedMembers[type] || 0) + Number(members[type]);
+    for (const k in members) {
+      updatedMembers[k] =
+        (updatedMembers[k] || 0) + Number(members[k]);
     }
-    // Update trip types
-    updatedTripTypes[trip_type] =
-      (updatedTripTypes[trip_type] || 0) + 1;
-    // Update destinations
-    destinations.forEach(dest => {
-      updatedDestinations[dest] =
-        (updatedDestinations[dest] || 0) + 1;
-    });
 
-    // Save updates
     await sql`
       UPDATE reports
-      SET
-        members = ${updatedMembers},
-        trip_type = ${updatedTripTypes},
-        visited_destinations = ${updatedDestinations}
+      SET members = ${updatedMembers}
       WHERE report_id = ${report.report_id}
     `;
-    res.json({ message: "Latest report updated after trip form" });
+
+    await sql`
+      UPDATE trip_types
+      SET number_of_triggers = number_of_triggers + 1
+      WHERE id = ${tripTypeId}
+    `;
+
+    for (const cityId of cityIds) {
+      await sql`
+        UPDATE cities
+        SET number_of_triggers = number_of_triggers + 1
+        WHERE id = ${cityId}
+      `;
+    }
+
+    res.json({ message: "Trip analytics updated successfully" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Failed to update report" });
+    res.status(500).json({ message: "Failed to update trip analytics" });
   }
 }
