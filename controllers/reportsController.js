@@ -233,7 +233,7 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
     const members = req.body.members || {};
     const tripTypeId = req.body.trip_type_id;
-    const cityIds = req.body.city_ids || [];
+    const cityId = req.body.city_id;
 
     const report = (await sql`
       SELECT *
@@ -260,13 +260,12 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       WHERE id = ${tripTypeId}
     `;
 
-    for (const cityId of cityIds) {
-      await sql`
-        UPDATE cities
-        SET number_of_triggers = number_of_triggers + 1
-        WHERE id = ${cityId}
-      `;
-    }
+    await sql`
+      UPDATE cities
+      SET number_of_triggers = number_of_triggers + 1
+      WHERE id = ${cityId}
+    `;
+    
 
     res.json({ message: "Trip analytics updated successfully" });
   } catch (err) {
