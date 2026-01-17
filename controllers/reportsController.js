@@ -228,18 +228,15 @@ export async function updateReportAfterSurvey(req, res) {
   }
 }
 
-/* After Trip Form Submission (QUERY, no trx) */
+/* After Trip Form Submission */
+import { sql } from "../config/db.js";
+
+/* After Trip Form Submission – MEMBERS ONLY */
 export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
-    // ===== READ FROM QUERY =====
-    const members = req.query.members
-      ? JSON.parse(req.query.members)
-      : {};
+    const members = req.body.members || {};
 
-    const tripTypeId = req.query.tripTypeId;
-    const cityId = req.query.cityId;
-
-    // 1. Get the LAST created report
+    // 1. Get latest report
     const report = (await sql`
       SELECT report_id, members
       FROM reports
@@ -251,46 +248,28 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       return res.status(404).json({ message: "No report found" });
     }
 
-    // 2. Update members safely
+    // 2. Update members JSON
     const updatedMembers = { ...(report.members || {}) };
 
-    for (const k in members) {
-      updatedMembers[k] =
-        (updatedMembers[k] || 0) + Number(members[k]);
+    for (const key in members) {
+      updatedMembers[key] =
+        (updatedMembers[key] || 0) + Number(members[key]);
     }
 
-    // 3. Save members update
+    // 3. Save updated members
     await sql`
       UPDATE reports
       SET members = ${updatedMembers}
       WHERE report_id = ${report.report_id}
     `;
 
-    // 4. Update trip type trigger
-    if (tripTypeId) {
-      await sql`
-        UPDATE trip_types
-        SET number_of_triggers = number_of_triggers + 1
-        WHERE id = ${tripTypeId}
-      `;
-    }
-
-    // 5. Update city trigger
-    if (cityId) {
-      await sql`
-        UPDATE cities
-        SET number_of_triggers = number_of_triggers + 1
-        WHERE id = ${cityId}
-      `;
-    }
-
     res.json({
-      message: "Trip analytics updated successfully",
-      updatedMembers
+      message: "Members updated successfully",
+      members: updatedMembers
     });
 
   } catch (err) {
-    console.error("Trip analytics error:", err);
-    res.status(500).json({ message: "Failed to update trip analytics" });
+    console.error("Members update error:", err);
+    res.status(500).json({ message: "Failed to update members" });
   }
 }
