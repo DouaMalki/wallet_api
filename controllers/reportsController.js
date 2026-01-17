@@ -242,8 +242,8 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       members = {};
     }
 
-    // ===== CITY ID (TEXT) =====
-    const cityId = req.body.cityId;
+    // ===== TRIP TYPE ID (UUID) =====
+    const tripTypeId = req.body.tripTypeId;
 
     // 1. Get latest report
     const report = (await sql`
@@ -271,30 +271,30 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       WHERE report_id = ${report.report_id}
     `;
 
-    // 3. Update city trigger (TEXT id)
-    if (cityId) {
-      const cityUpdate = await sql`
-        UPDATE cities
+    // 3. Update trip type trigger (UUID)
+    if (tripTypeId) {
+      const tripTypeUpdate = await sql`
+        UPDATE trip_types
         SET number_of_triggers = number_of_triggers + 1
-        WHERE id = ${cityId}
+        WHERE id = ${tripTypeId}
         RETURNING id, name, number_of_triggers;
       `;
 
-      if (cityUpdate.length === 0) {
+      if (tripTypeUpdate.length === 0) {
         return res.status(404).json({
-          message: "City not found",
+          message: "Trip type not found",
           members: updatedMembers
         });
       }
 
       return res.json({
-        message: "Members and city trigger updated successfully",
+        message: "Members and trip type trigger updated successfully",
         members: updatedMembers,
-        city: cityUpdate[0]
+        tripType: tripTypeUpdate[0]
       });
     }
 
-    // If no cityId provided
+    // If no tripTypeId provided
     res.json({
       message: "Members updated successfully",
       members: updatedMembers
