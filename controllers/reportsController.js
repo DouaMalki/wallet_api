@@ -229,47 +229,63 @@ export async function updateReportAfterSurvey(req, res) {
 }
 
 /* After Trip Form Submission */
+/* After Trip Form Submission */
 export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
     const members = req.body.members || {};
     const tripTypeId = req.body.tripTypeId;
     const cityId = req.body.cityId;
 
-    const report = (await sql`
-      SELECT *
-      FROM reports
-      ORDER BY created_at DESC
-      LIMIT 1
-    `)[0];
+    await sql.begin(async (trx) => {
+      // Get the LAST created report
+      const report = (await trx`
+        SELECT report_id, members
+        FROM reports
+        ORDER BY report_id DESC
+        LIMIT 1
+        FOR UPDATE
+      `)[0];
 
-    const updatedMembers = { ...report.members };
-    for (const k in members) {
-      updatedMembers[k] =
-        (updatedMembers[k] || 0) + Number(members[k]);
-    }
+      if (!report) {
+        throw new Error("No report found");
+      }
+      const updatedMembers = { ...(report.members || {}) };
+      for (const k in members) {
+        updatedMembers[k] =
+          (updatedMembers[k] || 0) + Number(members[k]);
+      }
 
-    await sql`
-      UPDATE reports
-      SET members = ${updatedMembers}
-      WHERE report_id = ${report.report_id}
-    `;
+      // Update report members
+      await trx`
+        UPDATE reports
+        SET members = ${updatedMembers}
+        WHERE report_id = ${report.report_id}
+      `;
 
-    await sql`
-      UPDATE trip_types
-      SET number_of_triggers = number_of_triggers + 1
-      WHERE id = ${tripTypeId}
-    `;
+      // Update trip type trigger
+      if (tripTypeId) {
+        await trx`
+          UPDATE trip_types
+          SET number_of_triggers = number_of_triggers + 1
+          WHERE id = ${tripTypeId}
+        `;
+      }
 
-    await sql`
-      UPDATE cities
-      SET number_of_triggers = number_of_triggers + 1
-      WHERE id = ${cityId}
-    `;
-    
-
-    res.json({ message: "Trip analytics updated successfully" });
+      // Update city trigger
+      if (cityId) {
+        await trx`
+          UPDATE cities
+          SET number_of_triggers = number_of_triggers + 1
+          WHERE id = ${cityId}
+        `;
+      }
+      res.json({
+        message: "Trip analytics updated successfully",
+        updatedMembers
+      });
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Trip analytics error:", err);
     res.status(500).json({ message: "Failed to update trip analytics" });
   }
 }
