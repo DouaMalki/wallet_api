@@ -230,11 +230,17 @@ export async function updateReportAfterSurvey(req, res) {
 
 
 /* After Trip Form Submission – MEMBERS ONLY */
+/* Update members ONLY – SAFE */
 export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
-    const members = req.body.members || {};
+    let members = req.body.members;
+    if (typeof members === "string") {
+      members = JSON.parse(members);
+    }
+    if (!members || typeof members !== "object") {
+      members = {};
+    }
 
-    // 1. Get latest report
     const report = (await sql`
       SELECT report_id, members
       FROM reports
@@ -246,7 +252,6 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       return res.status(404).json({ message: "No report found" });
     }
 
-    // 2. Update members JSON
     const updatedMembers = { ...(report.members || {}) };
 
     for (const key in members) {
@@ -254,7 +259,6 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
         (updatedMembers[key] || 0) + Number(members[key]);
     }
 
-    // 3. Save updated members
     await sql`
       UPDATE reports
       SET members = ${updatedMembers}
@@ -263,7 +267,8 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
 
     res.json({
       message: "Members updated successfully",
-      members: updatedMembers
+      before: report.members,
+      after: updatedMembers
     });
 
   } catch (err) {
@@ -271,3 +276,4 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
     res.status(500).json({ message: "Failed to update members" });
   }
 }
+
