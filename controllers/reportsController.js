@@ -229,10 +229,12 @@ export async function updateReportAfterSurvey(req, res) {
 }
 
 
-/* After Trip Form Submission – MEMBERS ONLY */
-/* Update members ONLY – SAFE */
+import { sql } from "../config/db.js";
+
+/* After Trip Form Submission */
 export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
+    // ===== MEMBERS =====
     let members = req.body.members;
     if (typeof members === "string") {
       members = JSON.parse(members);
@@ -241,6 +243,10 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       members = {};
     }
 
+    // ===== CITY ID (TEXT) =====
+    const cityId = req.body.cityId;
+
+    // 1. Get latest report
     const report = (await sql`
       SELECT report_id, members
       FROM reports
@@ -252,6 +258,7 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       return res.status(404).json({ message: "No report found" });
     }
 
+    // 2. Update members
     const updatedMembers = { ...(report.members || {}) };
 
     for (const key in members) {
@@ -265,15 +272,37 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       WHERE report_id = ${report.report_id}
     `;
 
+    // 3. Update city trigger (TEXT id)
+    if (cityId) {
+      const cityUpdate = await sql`
+        UPDATE cities
+        SET number_of_triggers = number_of_triggers + 1
+        WHERE id = ${cityId}
+        RETURNING id, name, number_of_triggers;
+      `;
+
+      if (cityUpdate.length === 0) {
+        return res.status(404).json({
+          message: "City not found",
+          members: updatedMembers
+        });
+      }
+
+      return res.json({
+        message: "Members and city trigger updated successfully",
+        members: updatedMembers,
+        city: cityUpdate[0]
+      });
+    }
+
+    // If no cityId provided
     res.json({
       message: "Members updated successfully",
-      before: report.members,
-      after: updatedMembers
+      members: updatedMembers
     });
 
   } catch (err) {
-    console.error("Members update error:", err);
-    res.status(500).json({ message: "Failed to update members" });
+    console.error("Trip form update error:", err);
+    res.status(500).json({ message: "Failed to update trip form data" });
   }
 }
-
