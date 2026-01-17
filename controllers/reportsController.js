@@ -229,7 +229,6 @@ export async function updateReportAfterSurvey(req, res) {
 }
 
 
-import { sql } from "../config/db.js";
 
 /* After Trip Form Submission */
 export async function updateReportAfterSubmittingTripForm(req, res) {
