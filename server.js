@@ -16,6 +16,7 @@ import adminRouter from "./routers/adminRouter.js";
 // import saveRouter from "./routers/saveRouter.js";
 import categoriesRouter from "./routers/categoriesRouter.js";
 import surveyRouter from "./routers/surveyRouter.js";
+import browseRouter from "./routers/browseRouter.js";
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
@@ -40,6 +41,7 @@ app.use("/api", surveyRouter);
 // routers created by jenin
 app.use("/api/users", usersRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/browse", browseRouter);
 
 
 // routers created by shahd
