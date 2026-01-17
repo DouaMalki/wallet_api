@@ -12,13 +12,13 @@ import {
 const router = express.Router();
 
 // Survey-related reports
-router.get("/survey", getSurveyReports);
+router.get("/surveyReport", getSurveyReports);
 // Trip-related reports
-router.get("/trips", getTripReports);
+router.get("/tripsReport", getTripReports);
 // System growth reports
-router.get("/growth", getSystemGrowth);
+router.get("/growthReport", getSystemGrowth);
 // Users activity reports
-router.get("/activity", getUsersActivity);
+router.get("/activityReport", getUsersActivity);
 // After submitting a trip form
 router.post("/trip-form", updateReportAfterSubmittingTripForm);
 // After updating system settings
