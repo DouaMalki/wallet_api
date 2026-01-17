@@ -233,75 +233,56 @@ export async function updateReportAfterSurvey(req, res) {
 /* After Trip Form Submission */
 export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
-    // ===== MEMBERS =====
     let members = req.body.members;
-    if (typeof members === "string") {
-      members = JSON.parse(members);
-    }
-    if (!members || typeof members !== "object") {
-      members = {};
-    }
+    if (typeof members === "string") members = JSON.parse(members);
+    if (!members || typeof members !== "object") members = {};
 
-    // ===== TRIP TYPE ID (UUID) =====
-    const tripTypeId = req.body.tripTypeId;
+    const cityId = req.body.cityId;       // Type: TEXT
+    const tripTypeId = req.body.tripTypeId; // Type: UUID
 
-    // 1. Get latest report
     const report = (await sql`
       SELECT report_id, members
       FROM reports
       ORDER BY report_id DESC
       LIMIT 1
     `)[0];
-
     if (!report) {
       return res.status(404).json({ message: "No report found" });
     }
-
-    // 2. Update members
     const updatedMembers = { ...(report.members || {}) };
-
     for (const key in members) {
       updatedMembers[key] =
         (updatedMembers[key] || 0) + Number(members[key]);
     }
-
     await sql`
       UPDATE reports
       SET members = ${updatedMembers}
       WHERE report_id = ${report.report_id}
     `;
 
-    // 3. Update trip type trigger (UUID)
+    if (cityId) {
+      await sql`
+        UPDATE cities
+        SET number_of_triggers = number_of_triggers + 1
+        WHERE id = ${cityId}
+      `;
+    }
+
     if (tripTypeId) {
-      const tripTypeUpdate = await sql`
+      await sql`
         UPDATE trip_types
         SET number_of_triggers = number_of_triggers + 1
         WHERE id = ${tripTypeId}
-        RETURNING id, name, number_of_triggers;
       `;
-
-      if (tripTypeUpdate.length === 0) {
-        return res.status(404).json({
-          message: "Trip type not found",
-          members: updatedMembers
-        });
-      }
-
-      return res.json({
-        message: "Members and trip type trigger updated successfully",
-        members: updatedMembers,
-        tripType: tripTypeUpdate[0]
-      });
     }
 
-    // If no tripTypeId provided
     res.json({
-      message: "Members updated successfully",
+      message: "Members, city, and trip type updated successfully",
       members: updatedMembers
     });
 
   } catch (err) {
-    console.error("Trip form update error:", err);
-    res.status(500).json({ message: "Failed to update trip form data" });
+    console.error(err);
+    res.status(500).json({ message: "Failed to update trip analytics" });
   }
 }
