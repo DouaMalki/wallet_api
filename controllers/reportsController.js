@@ -24,7 +24,7 @@ export async function getSurveyReports(req, res) {
 /* TripRelatedReports (USES cities & trip_types) */
 export async function getTripReports(req, res) {
   try {
-    // Members distribution (still from reports)
+    // Members distribution
     const report = (await sql`
       SELECT members
       FROM reports
