@@ -165,16 +165,35 @@ ${JSON.stringify(compactPlaces, null, 2)}
         body: JSON.stringify(body),
     });
 
+    // if (!res.ok) {
+    //     const t = await res.text();
+    //     throw new Error(`Gemini generateContent failed: ${res.status} ${t}`);
+    // }
     if (!res.ok) {
         const t = await res.text();
+
+        // Retry on 429 (rate limit)
+        if (res.status === 429) {
+            // backoff بسيط (30 ثانية)
+            console.warn("Gemini 429 rate limit. Sleeping 30s then retry...");
+            await sleep(30000);
+            return geminiEnrich(batch, cityName);
+        }
+
         throw new Error(`Gemini generateContent failed: ${res.status} ${t}`);
     }
+
 
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error("Gemini returned no text.");
     return JSON.parse(text);
 }
+
+function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+}
+
 
 // -------------------- DB helpers --------------------
 async function getCityOrThrow(cityId) {
@@ -290,14 +309,31 @@ async function updateGeminiFields(googlePlaceId, enriched) {
     await sql`
     UPDATE public.locations
     SET
-      estimated_time = ${enriched.estimated_time_minutes},
-      max_cost = ${enriched.max_cost_ils},
-      recommended_for = ${enriched.recommended_for},
-      closed_days = ${enriched.closed_days},
+      estimated_time  = COALESCE(public.locations.estimated_time, ${enriched.estimated_time_minutes}),
+      max_cost        = COALESCE(public.locations.max_cost, ${enriched.max_cost_ils}),
+      recommended_for = COALESCE(public.locations.recommended_for, ${enriched.recommended_for}),
+      closed_days     = COALESCE(public.locations.closed_days, ${enriched.closed_days}),
       updated_at = now()
     WHERE google_place_id = ${googlePlaceId}
   `;
 }
+
+
+async function getPlacesNeedingGemini(cityId) {
+    const rows = await sql`
+    SELECT google_place_id
+    FROM public.locations
+    WHERE city_id = ${cityId}
+      AND (
+        estimated_time IS NULL OR
+        max_cost IS NULL OR
+        recommended_for IS NULL OR
+        closed_days IS NULL
+      )
+  `;
+    return new Set(rows.map(r => r.google_place_id));
+}
+
 
 // -------------------- Main run --------------------
 function chunk(arr, size) {
@@ -404,8 +440,19 @@ async function main() {
     console.log(`\nImported/Upserted locations: ${totalImported}`);
     console.log(`Gemini enrichment candidates: ${placesForGemini.length}`);
 
+    console.log(`\nImported/Upserted locations: ${totalImported}`);
+    console.log(`Gemini raw candidates (before DB filter): ${placesForGemini.length}`);
+
+    // Only enrich places that still need enrichment
+    const needSet = await getPlacesNeedingGemini(city.id);
+    const filteredForGemini = placesForGemini.filter(p => needSet.has(p.google_place_id));
+
+    console.log(`Gemini candidates (after DB filter): ${filteredForGemini.length}`);
+
+
     // Gemini batches
-    for (const group of chunk(placesForGemini, batchSize)) {
+    //for (const group of chunk(placesForGemini, batchSize)) {
+    for (const group of chunk(filteredForGemini, batchSize)) {
         const out = await geminiEnrich(group, city.name);
         const results = out?.results || [];
         const map = new Map(results.map((r) => [r.google_place_id, r]));
