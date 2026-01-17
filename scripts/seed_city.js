@@ -18,17 +18,37 @@ const radiusMeters = Number(getArg("radius", "8000")); // default 8km
 const maxTotalPlaces = Number(getArg("max_total", "220")); // safety cap
 const batchSize = Number(getArg("batch", "15"));
 
+const GOOGLE_KEY = process.env.GOOGLE_MAPS_API_KEY;
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+
+
+if (!GOOGLE_KEY) throw new Error("Missing env GOOGLE_MAPS_API_KEY");
+if (!GEMINI_KEY) throw new Error("Missing env GEMINI_API_KEY");
+
+const tripTypeSlug = getArg("trip_type"); // optional
+
 if (!cityId) {
     console.error("Usage: node scripts/seed_city.js --city=ramallah [--mode=seed|on_demand] [--categories=hiking,kids_activities]");
     process.exit(1);
 }
 
-const GOOGLE_KEY = process.env.GOOGLE_MAPS_API_KEY;
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
 
-if (!GOOGLE_KEY) throw new Error("Missing env GOOGLE_MAPS_API_KEY");
-if (!GEMINI_KEY) throw new Error("Missing env GEMINI_API_KEY");
+
+async function getRuleCategoriesByTripTypeSlug(tripTypeSlug) {
+    const rows = await sql`
+    SELECT r.rule_json
+    FROM public.trip_type_rules r
+    JOIN public.trip_types t ON t.id = r.trip_type_id
+    WHERE r.is_active = TRUE
+      AND t.slug = ${tripTypeSlug}
+    LIMIT 1
+  `;
+    const rule = rows?.[0]?.rule_json;
+    const slugs = rule?.required_category_slugs || [];
+    return Array.isArray(slugs) ? slugs.map(s => String(s).toLowerCase()) : [];
+}
+
 
 // -------------------- Google Places v1 helpers --------------------
 // Nearby Search (New) is POST https://places.googleapis.com/v1/places:searchNearby and requires field mask. :contentReference[oaicite:0]{index=0}
@@ -92,7 +112,7 @@ async function placesGetDetails(placeId) {
 // -------------------- Gemini helper --------------------
 // generateContent endpoint: POST https://generativelanguage.googleapis.com/v1beta/{model=models/*}:generateContent :contentReference[oaicite:3]{index=3}
 // GenerationConfig supports responseMimeType + responseSchema for structured JSON. :contentReference[oaicite:4]{index=4}
-async function geminiEnrich(batch, cityName) {
+async function geminiEnrich(batch, cityName, attempt = 1) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
         GEMINI_MODEL
     )}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`;
@@ -173,11 +193,20 @@ ${JSON.stringify(compactPlaces, null, 2)}
         const t = await res.text();
 
         // Retry on 429 (rate limit)
+        // if (res.status === 429) {
+        //     // backoff بسيط (30 ثانية)
+        //     console.warn("Gemini 429 rate limit. Sleeping 30s then retry...");
+        //     await sleep(30000);
+        //     return geminiEnrich(batch, cityName);
+        // }
         if (res.status === 429) {
-            // backoff بسيط (30 ثانية)
-            console.warn("Gemini 429 rate limit. Sleeping 30s then retry...");
-            await sleep(30000);
-            return geminiEnrich(batch, cityName);
+            if (attempt >= 5) {
+                throw new Error("Gemini 429 persisted after 5 retries. Stop.");
+            }
+            const waitMs = 30000 * attempt; // 30s ثم 60s ثم 90s...
+            console.warn(`Gemini 429. Sleeping ${waitMs / 1000}s then retry (attempt ${attempt + 1})...`);
+            await sleep(waitMs);
+            return geminiEnrich(batch, cityName, attempt + 1);
         }
 
         throw new Error(`Gemini generateContent failed: ${res.status} ${t}`);
@@ -202,6 +231,18 @@ async function getCityOrThrow(cityId) {
     return rows[0];
 }
 
+async function isCityAlreadySeeded(cityId) {
+    const rows = await sql`
+    SELECT city_id
+    FROM public.city_seed_status
+    WHERE city_id = ${cityId}
+    LIMIT 1
+  `;
+    return rows.length > 0;
+}
+
+
+
 async function getCategoriesForRun(mode, categoriesCsv) {
     if (mode === "seed") {
         return sql`
@@ -211,16 +252,40 @@ async function getCategoriesForRun(mode, categoriesCsv) {
       ORDER BY seed_rank ASC NULLS LAST, slug ASC
     `;
     }
+    // if (mode === "on_demand") {
+    //     if (!categoriesCsv) throw new Error("on_demand mode requires --categories=slug1,slug2");
+    //     const slugs = categoriesCsv.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    //     return sql`
+    //   SELECT id, slug, google_types, is_seed_default, seed_rank, min_results_per_city, search_strategy
+    //   FROM public.categories
+    //   WHERE slug = ANY(${slugs})
+    //   ORDER BY slug ASC
+    // `;
+    // }
     if (mode === "on_demand") {
-        if (!categoriesCsv) throw new Error("on_demand mode requires --categories=slug1,slug2");
-        const slugs = categoriesCsv.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+        let slugs = [];
+
+        if (categoriesCsv) {
+            slugs = categoriesCsv.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+        } else if (tripTypeSlug) {
+            slugs = await getRuleCategoriesByTripTypeSlug(tripTypeSlug);
+        }
+
+        if (!slugs.length) {
+            throw new Error(
+                `on_demand: no categories found. Provide --categories=... OR ensure trip_type_rules has required_category_slugs for trip_type=${tripTypeSlug}`
+            );
+        }
+
+
         return sql`
-      SELECT id, slug, google_types, is_seed_default, seed_rank, min_results_per_city, search_strategy
-      FROM public.categories
-      WHERE slug = ANY(${slugs})
-      ORDER BY slug ASC
-    `;
+    SELECT id, slug, google_types, is_seed_default, seed_rank, min_results_per_city, search_strategy
+    FROM public.categories
+    WHERE slug = ANY(${slugs})
+    ORDER BY slug ASC
+  `;
     }
+
     throw new Error(`Unknown mode: ${mode}`);
 }
 
@@ -344,6 +409,17 @@ function chunk(arr, size) {
 
 async function main() {
     const city = await getCityOrThrow(cityId);
+
+    // If city already seeded, skip Google/Gemini for seed mode
+    if (mode === "seed") {
+        const already = await isCityAlreadySeeded(city.id);
+        if (already) {
+            console.log(`City ${city.id} already seeded. Exiting without Google/Gemini.`);
+            return;
+        }
+    }
+
+
     const categories = await getCategoriesForRun(mode, categoriesCsv);
 
     console.log("City:", city.id, city.name, city.center_lat, city.center_lng);
@@ -438,9 +514,6 @@ async function main() {
     }
 
     console.log(`\nImported/Upserted locations: ${totalImported}`);
-    console.log(`Gemini enrichment candidates: ${placesForGemini.length}`);
-
-    console.log(`\nImported/Upserted locations: ${totalImported}`);
     console.log(`Gemini raw candidates (before DB filter): ${placesForGemini.length}`);
 
     // Only enrich places that still need enrichment
@@ -465,6 +538,19 @@ async function main() {
 
         console.log(`Gemini batch enriched: ${group.length}`);
     }
+
+    if (mode === "seed") {
+        await sql`
+    INSERT INTO public.city_seed_status (city_id, last_seeded_at, last_mode, notes)
+    VALUES (${city.id}, now(), ${mode}, 'seed completed')
+    ON CONFLICT (city_id) DO UPDATE SET
+      last_seeded_at = EXCLUDED.last_seeded_at,
+      last_mode = EXCLUDED.last_mode,
+      notes = EXCLUDED.notes
+  `;
+    }
+
+
 
     console.log("Done.");
 }
