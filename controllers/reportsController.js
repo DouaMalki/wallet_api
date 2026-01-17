@@ -232,8 +232,8 @@ export async function updateReportAfterSurvey(req, res) {
 export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
     const members = req.body.members || {};
-    const tripTypeId = req.body.trip_type_id;
-    const cityId = req.body.city_id;
+    const tripTypeId = req.body.tripTypeId;
+    const cityId = req.body.cityId;
 
     const report = (await sql`
       SELECT *
