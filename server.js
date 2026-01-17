@@ -13,6 +13,7 @@ import citiesRouter from "./routers/citiesRouter.js";
 import tripTypesRouter from "./routers/tripTypesRouter.js";
 import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
 import adminRouter from "./routers/adminRouter.js";
+import saveRouter from "./routers/saveRouter.js";
 import categoriesRouter from "./routers/categoriesRouter.js";
 import surveyRouter from "./routers/surveyRouter.js";
 
@@ -48,6 +49,8 @@ app.use("/api/trip-types", tripTypesRouter);
 app.use("/api/trip_type_rules", tripTypeRulesRouter);
 app.use("/api/categories", categoriesRouter);
 
+
+app.use("/api/saved-locations", saveRouter);
 
 console.log("✅ server.js loaded - mounting /api/locations");
 

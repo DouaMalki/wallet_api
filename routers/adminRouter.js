@@ -1,37 +1,34 @@
 import express from "express";
 import {
-//   addTripType,
-//   deleteTripType,
-//   getAllTripTypes,
+  addTripType,
+  deleteTripType,
+  getAllTripTypes,
+  addProblemType,
+  deleteProblemType,
+  getProblemTypes,
 //   addLocation,
 //   deleteLocation,
 //   getAllLocations,
-  updateSystemSettings,
-  getCurrentSystemSettings,
-  getMemberTypes,
-  getTripTypes,
-  getProblemTypes,
-  getDestinations,
+  updateSystemLimits,
 } from "../controllers/adminController.js";
 
 const router = express.Router();
 
-router.post("/system-settings", updateSystemSettings);
-router.get("/system-settings", getCurrentSystemSettings);
-router.get("/system-settings/member-types", getMemberTypes);
-router.get("/system-settings/trip-types", getTripTypes);
+// Admin routes
+router.post("/trip-types", addTripType);
+router.delete("/trip-types/:id", deleteTripType);
+
+// Public (used by trip plan form)
+router.get("/trip-types", getAllTripTypes);
+
+// Problem Types JSON CRUD (system_settings.problem_types)
+router.post("/system-settings/problem-types", addProblemType);
+router.delete("/system-settings/problem-types/:key", deleteProblemType);
 router.get("/system-settings/problem-types", getProblemTypes);
-router.get("/system-settings/destinations", getDestinations);
 
 
-
-
-// // Admin routes
-// router.post("/trip-types", addTripType);
-// router.delete("/trip-types/:id", deleteTripType);
-
-// // Public (used by trip plan form)
-// router.get("/trip-types", getAllTripTypes);
+// Limits (only 2 fields)
+router.post("/system-settings/limits", updateSystemLimits);
 
 // // Locations management
 // router.post("/locations", addLocation);
