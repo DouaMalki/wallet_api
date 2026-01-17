@@ -228,8 +228,6 @@ export async function updateReportAfterSurvey(req, res) {
   }
 }
 
-/* After Trip Form Submission */
-import { sql } from "../config/db.js";
 
 /* After Trip Form Submission – MEMBERS ONLY */
 export async function updateReportAfterSubmittingTripForm(req, res) {
