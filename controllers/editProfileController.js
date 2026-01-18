@@ -14,7 +14,6 @@ export async function updateName(req, res) {
       WHERE user_id = ${user_id}
       RETURNING user_id, name
     `;
-
     res.status(200).json(result[0]);
   } catch (err) {
     console.error("Update name error:", err);
@@ -25,8 +24,8 @@ export async function updateName(req, res) {
 export async function checkEmailUniqueness(req, res) {
   const { user_id, email } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ message: "Email is required" });
+  if (!user_id || !email) {
+    return res.status(400).json({ message: "Missing required fields" });
   }
 
   try {
