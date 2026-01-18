@@ -4,8 +4,8 @@ import { getAllUsers, getUserById, getUsersWithHighTripCreation, deleteUser, blo
 const router = express.Router();
 
 router.get("/", getAllUsers);
-router.get("/:id", getUserById);
 router.get("/high-trip-creation", getUsersWithHighTripCreation);
+router.get("/:id", getUserById);
 router.patch("/:id/block", blockUser);
 router.delete("/:id", deleteUser);
 
