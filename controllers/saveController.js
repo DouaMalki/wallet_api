@@ -1,15 +1,15 @@
-/*import { sql } from "../config/db.js";
+import { sql } from "../config/db.js";
 
 /* Helper: get logged-in user id from whatever your auth middleware sets */
-/*function getAuthUserId(req) {
+function getAuthUserId(req) {
   return req.user?.id ?? req.user?.user_id ?? req.userId ?? null;
-}*/
+}
 
 /**
  * POST /api/saved-locations/:locationId
  * Save a location for the logged-in user
  */
-/*export async function saveLocation(req, res) {
+export async function saveLocation(req, res) {
   try {
     const userId = getAuthUserId(req);
     const locationId = Number(req.params.locationId);
@@ -51,13 +51,13 @@
     console.error("saveLocation error:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
-}*/
+}
 
 /**
  * DELETE /api/saved-locations/:locationId
  * Unsave a location for the logged-in user
  */
-/*export async function unsaveLocation(req, res) {
+export async function unsaveLocation(req, res) {
   try {
     const userId = getAuthUserId(req);
     const locationId = Number(req.params.locationId);
@@ -85,7 +85,7 @@
     console.error("unsaveLocation error:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
-}*/
+}
 
 /**
  * GET /api/saved-locations
@@ -96,7 +96,7 @@
  *
  * Below = Option A (safe, won't break if you don't have locations table name/fields yet)
  */
-/*export async function getSavedLocations(req, res) {
+export async function getSavedLocations(req, res) {
   try {
     const userId = getAuthUserId(req);
 
@@ -119,13 +119,13 @@
     console.error("getSavedLocations error:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
-}*/
+}
 
 /**
  * GET /api/saved-locations/check/:locationId
  * Check if a location is saved by the logged-in user (for bookmark icon state)
  */
-/*export async function isLocationSaved(req, res) {
+export async function isLocationSaved(req, res) {
   try {
     const userId = getAuthUserId(req);
     const locationId = Number(req.params.locationId);
@@ -150,4 +150,4 @@
     console.error("isLocationSaved error:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
-}*/
+}
