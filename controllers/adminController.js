@@ -1,18 +1,18 @@
 import { sql } from "../config/db.js";
 
-function mergeJson(current, changes) {
-  const merged = { ...current };
+// function mergeJson(current, changes) {
+//   const merged = { ...current };
 
-  for (const key in changes) {
-    if (changes[key] === null) {
-      delete merged[key]; // remove
-    } else {
-      merged[key] = changes[key]; // add or update
-    }
-  }
+//   for (const key in changes) {
+//     if (changes[key] === null) {
+//       delete merged[key]; // remove
+//     } else {
+//       merged[key] = changes[key]; // add or update
+//     }
+//   }
 
-  return merged;
-}
+//   return merged;
+// }
 
 // Admin: Add a new trip type
 export async function addTripType(req, res) {
@@ -96,55 +96,74 @@ export async function getAllTripTypes(req, res) {
   }
 }
 
-// Admin: Add a problem type (stored in system_settings.problem_types JSON)
+/* ---------- Helpers ---------- */
+async function getLatestSettingsRow() {
+  const result = await sql`
+    SELECT *
+    FROM system_settings
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  return result[0] || null;
+}
+
+function normalizeText(v) {
+  return String(v ?? "").trim();
+}
+
+/* ---------- GET problem types (TEXT[]) ---------- */
+export async function getProblemTypes(req, res) {
+  try {
+    const settings = await getLatestSettingsRow();
+    if (!settings) return res.json([]);
+
+    res.json(settings.problem_types || []);
+  } catch (err) {
+    console.error("Get problem types error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/* ---------- Admin: Add problem type (TEXT[]) ---------- */
 export async function addProblemType(req, res) {
   try {
-    const { key, name_ar } = req.body;
+    const { name } = req.body; // keep it simple: send { "name": "Road closed" }
+    const problem = normalizeText(name);
 
-    if (!key) {
-      return res.status(400).json({ message: "key is required" });
+    if (!problem) {
+      return res.status(400).json({ message: "name is required" });
     }
 
-    const latest = await sql`
-      SELECT *
-      FROM system_settings
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-
-    if (latest.length === 0) {
+    const current = await getLatestSettingsRow();
+    if (!current) {
       return res.status(400).json({ message: "System settings not initialized" });
     }
 
-    const current = latest[0];
+    const currentList = current.problem_types || [];
+    const exists = currentList.some(
+      (x) => String(x).toLowerCase() === problem.toLowerCase()
+    );
 
-    const changes = {
-      [key]: { label: key, name_ar: name_ar || null }, // you can store any structure you want
-    };
-
-    const newProblemTypes = mergeJson(current.problem_types, changes);
-
-    // If no actual changes
-    if (JSON.stringify(newProblemTypes) === JSON.stringify(current.problem_types)) {
-      return res.json({ message: "No changes detected" });
+    if (exists) {
+      return res.status(409).json({ message: "Problem type already exists" });
     }
+
+    const newProblemTypes = [...currentList, problem];
 
     const result = await sql`
       INSERT INTO system_settings (
-        member_types,
-        trip_types,
-        problem_types,
-        destinations,
         max_trips_per_minute,
-        max_locations_per_day
+        max_locations_per_day,
+        trip_types,
+        destinations,
+        problem_types
       )
       VALUES (
-        ${current.member_types},
-        ${current.trip_types},
-        ${newProblemTypes},
-        ${current.destinations},
         ${current.max_trips_per_minute},
-        ${current.max_locations_per_day}
+        ${current.max_locations_per_day},
+        ${current.trip_types},
+        ${current.destinations},
+        ${newProblemTypes}
       )
       RETURNING *
     `;
@@ -159,47 +178,48 @@ export async function addProblemType(req, res) {
   }
 }
 
-// Admin: Delete a problem type by key (stored in system_settings.problem_types JSON)
+/* ---------- Admin: Delete problem type (TEXT[]) ---------- */
 export async function deleteProblemType(req, res) {
   try {
-    const { key } = req.params;
+    const { name } = req.params; // DELETE /system-settings/problem-types/:name
+    const problem = normalizeText(decodeURIComponent(name));
 
-    const latest = await sql`
-      SELECT *
-      FROM system_settings
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
+    if (!problem) {
+      return res.status(400).json({ message: "name param is required" });
+    }
 
-    if (latest.length === 0) {
+    const current = await getLatestSettingsRow();
+    if (!current) {
       return res.status(400).json({ message: "System settings not initialized" });
     }
 
-    const current = latest[0];
+    const currentList = current.problem_types || [];
+    const exists = currentList.some(
+      (x) => String(x).toLowerCase() === problem.toLowerCase()
+    );
 
-    const changes = { [key]: null }; // mergeJson will remove it
-    const newProblemTypes = mergeJson(current.problem_types, changes);
-
-    if (JSON.stringify(newProblemTypes) === JSON.stringify(current.problem_types)) {
-      return res.json({ message: "No changes detected" });
+    if (!exists) {
+      return res.status(404).json({ message: "Problem type not found" });
     }
+
+    const newProblemTypes = currentList.filter(
+      (x) => String(x).toLowerCase() !== problem.toLowerCase()
+    );
 
     const result = await sql`
       INSERT INTO system_settings (
-        member_types,
-        trip_types,
-        problem_types,
-        destinations,
         max_trips_per_minute,
-        max_locations_per_day
+        max_locations_per_day,
+        trip_types,
+        destinations,
+        problem_types
       )
       VALUES (
-        ${current.member_types},
-        ${current.trip_types},
-        ${newProblemTypes},
-        ${current.destinations},
         ${current.max_trips_per_minute},
-        ${current.max_locations_per_day}
+        ${current.max_locations_per_day},
+        ${current.trip_types},
+        ${current.destinations},
+        ${newProblemTypes}
       )
       RETURNING *
     `;
@@ -214,55 +234,30 @@ export async function deleteProblemType(req, res) {
   }
 }
 
-// Get the Problem Types
-export async function getProblemTypes(req, res) {
-  try {
-    const result = await sql`
-      SELECT problem_types
-      FROM system_settings
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-
-    if (result.length === 0) {
-      return res.json({});
-    }
-
-    res.json(result[0].problem_types);
-  } catch (err) {
-    console.error("Get problem types error:", err);
-    res.status(500).json({ message: "Internal server error" });
-  }
-}
-
-
-// Update the 2 system limits
+/* ---------- Admin: Update ONLY the 2 limits ---------- */
 export async function updateSystemLimits(req, res) {
   try {
     const { max_trips_per_minute, max_locations_per_day } = req.body;
 
-    const latest = await sql`
-      SELECT *
-      FROM system_settings
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-
-    if (latest.length === 0) {
+    const current = await getLatestSettingsRow();
+    if (!current) {
       return res.status(400).json({ message: "System settings not initialized" });
     }
 
-    const current = latest[0];
-
+    // Allow partial updates (send only one field)
     const newMaxTrips =
-      max_trips_per_minute !== undefined && max_trips_per_minute !== null
-        ? Number(max_trips_per_minute)
-        : current.max_trips_per_minute;
+      max_trips_per_minute === undefined || max_trips_per_minute === null
+        ? current.max_trips_per_minute
+        : Number(max_trips_per_minute);
 
     const newMaxLocations =
-      max_locations_per_day !== undefined && max_locations_per_day !== null
-        ? Number(max_locations_per_day)
-        : current.max_locations_per_day;
+      max_locations_per_day === undefined || max_locations_per_day === null
+        ? current.max_locations_per_day
+        : Number(max_locations_per_day);
+
+    if (Number.isNaN(newMaxTrips) || Number.isNaN(newMaxLocations)) {
+      return res.status(400).json({ message: "Limits must be valid numbers" });
+    }
 
     const hasChanges =
       newMaxTrips !== current.max_trips_per_minute ||
@@ -274,20 +269,18 @@ export async function updateSystemLimits(req, res) {
 
     const result = await sql`
       INSERT INTO system_settings (
-        member_types,
-        trip_types,
-        problem_types,
-        destinations,
         max_trips_per_minute,
-        max_locations_per_day
+        max_locations_per_day,
+        trip_types,
+        destinations,
+        problem_types
       )
       VALUES (
-        ${current.member_types},
-        ${current.trip_types},
-        ${current.problem_types},
-        ${current.destinations},
         ${newMaxTrips},
-        ${newMaxLocations}
+        ${newMaxLocations},
+        ${current.trip_types},
+        ${current.destinations},
+        ${current.problem_types}
       )
       RETURNING *
     `;
@@ -301,6 +294,19 @@ export async function updateSystemLimits(req, res) {
     res.status(500).json({ message: "Internal server error" });
   }
 }
+
+/* ---------- Get current full settings ---------- */
+export async function getCurrentSystemSettings(req, res) {
+  try {
+    const settings = await getLatestSettingsRow();
+    if (!settings) return res.status(404).json({ message: "No settings found" });
+    res.json(settings);
+  } catch (err) {
+    console.error("Get system settings error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
 
 
 

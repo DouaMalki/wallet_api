@@ -20,6 +20,7 @@
 // }
 
 import { listLocations } from "../repositories/locationsRepo.js";
+import { ensureLocationsForTripType } from "../services/seedCityService.js";
 
 export async function getLocations(req, res) {
     try {
@@ -47,6 +48,18 @@ export async function getLocations(req, res) {
             typeof tripType === "string" && tripType.trim()
                 ? tripType.trim().toLowerCase()
                 : null;
+
+        // ✅ هنا الربط: ensure قبل ما نرجّع locations
+        if (cityId && safeTripType) {
+            // مبدئياً synchronous
+            await ensureLocationsForTripType({
+                cityId,
+                tripTypeSlug: safeTripType,
+                radiusMeters: 8000,
+                maxTotalPlaces: 220,
+                batchSize: 15,
+            });
+        }
 
         const rows = await listLocations({
             cityId: cityId || null,

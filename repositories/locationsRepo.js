@@ -57,5 +57,7 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
     ${offset ? sql`OFFSET ${offset}` : sql``}
   `;
 
+  console.log('Locations retrieved:', rows);  // طباعة الأماكن التي يتم استرجاعها
+
   return rows.map(mapLocationRow);
 }

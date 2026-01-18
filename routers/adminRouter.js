@@ -10,6 +10,7 @@ import {
 //   deleteLocation,
 //   getAllLocations,
   updateSystemLimits,
+  getCurrentSystemSettings,
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -21,14 +22,16 @@ router.delete("/trip-types/:id", deleteTripType);
 // Public (used by trip plan form)
 router.get("/trip-types", getAllTripTypes);
 
-// Problem Types JSON CRUD (system_settings.problem_types)
+// Problem Types (TEXT[]) (system_settings.problem_types)
 router.post("/system-settings/problem-types", addProblemType);
-router.delete("/system-settings/problem-types/:key", deleteProblemType);
+router.delete("/system-settings/problem-types/:name", deleteProblemType);
 router.get("/system-settings/problem-types", getProblemTypes);
-
 
 // Limits (only 2 fields)
 router.post("/system-settings/limits", updateSystemLimits);
+
+// settings
+router.get("/system-settings", getCurrentSystemSettings);
 
 // // Locations management
 // router.post("/locations", addLocation);
