@@ -1,28 +1,34 @@
 import { sql } from "../config/db.js";
 
-/* Helper: get logged-in user id from whatever your auth middleware sets */
 function getAuthUserId(req) {
-  return req.user?.id ?? req.user?.user_id ?? req.userId ?? null;
+  return req.user?.user_id ?? req.user?.id ?? req.userId ?? null;
 }
 
-/**
- * POST /api/saved-locations/:locationId
- * Save a location for the logged-in user
- */
+function isUUID(v) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+// POST /api/saved-locations/:locationId
 export async function saveLocation(req, res) {
   try {
     const userId = getAuthUserId(req);
-    const locationId = Number(req.params.locationId);
+    const locationId = (req.params.locationId || "").trim(); // UUID string
 
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
-    if (!locationId || Number.isNaN(locationId)) {
+    if (!isUUID(locationId)) {
       return res.status(400).json({ message: "Invalid locationId" });
     }
 
-    // Prevent duplicates (since table doesn't show a unique(user_id, location_id))
+    // Optional (recommended): ensure location exists
+    const loc = await sql`
+      SELECT id FROM locations WHERE id = ${locationId} LIMIT 1
+    `;
+    if (loc.length === 0) {
+      return res.status(404).json({ message: "Location not found" });
+    }
+
+    // If you added UNIQUE(user_id, location_id), this check is still nice for clean response
     const existing = await sql`
       SELECT saved_location_id
       FROM saved_location
@@ -53,20 +59,15 @@ export async function saveLocation(req, res) {
   }
 }
 
-/**
- * DELETE /api/saved-locations/:locationId
- * Unsave a location for the logged-in user
- */
+// DELETE /api/saved-locations/:locationId
 export async function unsaveLocation(req, res) {
   try {
     const userId = getAuthUserId(req);
-    const locationId = Number(req.params.locationId);
+    const locationId = (req.params.locationId || "").trim();
 
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
-    if (!locationId || Number.isNaN(locationId)) {
+    if (!isUUID(locationId)) {
       return res.status(400).json({ message: "Invalid locationId" });
     }
 
@@ -87,22 +88,11 @@ export async function unsaveLocation(req, res) {
   }
 }
 
-/**
- * GET /api/saved-locations
- * Get all saved locations for the logged-in user
- *
- * Option A: only returns saved_location rows (location_id + saved_at)
- * Option B: join with locations table (if you have it) to return details
- *
- * Below = Option A (safe, won't break if you don't have locations table name/fields yet)
- */
+// GET /api/saved-locations
 export async function getSavedLocations(req, res) {
   try {
     const userId = getAuthUserId(req);
-
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
     const saved = await sql`
       SELECT
@@ -121,20 +111,15 @@ export async function getSavedLocations(req, res) {
   }
 }
 
-/**
- * GET /api/saved-locations/check/:locationId
- * Check if a location is saved by the logged-in user (for bookmark icon state)
- */
+// GET /api/saved-locations/check/:locationId
 export async function isLocationSaved(req, res) {
   try {
     const userId = getAuthUserId(req);
-    const locationId = Number(req.params.locationId);
+    const locationId = (req.params.locationId || "").trim();
 
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
-    if (!locationId || Number.isNaN(locationId)) {
+    if (!isUUID(locationId)) {
       return res.status(400).json({ message: "Invalid locationId" });
     }
 
