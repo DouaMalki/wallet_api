@@ -1,41 +1,71 @@
 import { sql } from "../config/db.js";
 
-export async function editProfile(req, res) {
-  const { user_id, name, email, profile_image } = req.body;
+export async function updateName(req, res) {
+  const { user_id, name } = req.body;
 
-  if (!user_id || !name || !email) {
+  if (!user_id || !name?.trim()) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
   try {
-    /* Check email uniqueness in DB */
-    const emailExists = await sql`
+    const result = await sql`
+      UPDATE users
+      SET name = ${name}
+      WHERE user_id = ${user_id}
+      RETURNING user_id, name
+    `;
+
+    res.status(200).json(result[0]);
+  } catch (err) {
+    console.error("Update name error:", err);
+    res.status(500).json({ message: "Failed to update name" });
+  }
+}
+
+export async function checkEmailUniqueness(req, res) {
+  const { user_id, email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: "Email is required" });
+  }
+
+  try {
+    const result = await sql`
       SELECT user_id
       FROM users
       WHERE email = ${email}
         AND user_id != ${user_id}
     `;
-    if (emailExists.length > 0) {
-      return res.status(409).json({
-        message: "Email already in use",
-      });
-    }
 
-    /* Update DB */
+    res.status(200).json({
+      isUnique: result.length === 0,
+    });
+  } catch (err) {
+    console.error("Check email uniqueness error:", err);
+    res.status(500).json({ message: "Failed to check email" });
+  }
+}
+
+export async function updateEmail(req, res) {
+  const { user_id, email } = req.body;
+
+  if (!user_id || !email) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
     const result = await sql`
       UPDATE users
-      SET
-        name = ${name},
-        email = ${email},
-        profile_image = ${profile_image}
+      SET email = ${email}
       WHERE user_id = ${user_id}
-      RETURNING *
+      RETURNING user_id, email
     `;
 
     res.status(200).json(result[0]);
   } catch (err) {
-    console.error("Edit profile error:", err);
-    res.status(500).json({ message: "Profile update failed" });
+    console.error("Update email error:", err);
+    res.status(500).json({ message: "Failed to update email" });
   }
 }
+
 

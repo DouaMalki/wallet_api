@@ -54,6 +54,7 @@ app.use("/api/categories", categoriesRouter);
 
 // app.use("/api/saved-locations", saveRouter);
 
+
 // To test that the application connected to the database
 const PORT = process.env.PORT || 5000;
 initDB().then(() => {
