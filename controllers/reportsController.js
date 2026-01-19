@@ -233,13 +233,16 @@ export async function updateReportAfterSurvey(req, res) {
 /* After Trip Form Submission */
 export async function updateReportAfterSubmittingTripForm(req, res) {
   try {
-    let members = req.body.members;
-    if (typeof members === "string") members = JSON.parse(members);
-    if (!members || typeof members !== "object") members = {};
+    let memberType = req.body.members;
+    if (!memberType || typeof memberType !== "string") {
+      return res.status(400).json({
+        message: "Invalid member type",
+      });
+    }
+    const cityId = req.body.cityId;         // TEXT
+    const tripTypeId = req.body.tripTypeId; // UUID
 
-    const cityId = req.body.cityId;       // Type: TEXT
-    const tripTypeId = req.body.tripTypeId; // Type: UUID
-
+    /* Get latest report */
     const report = (await sql`
       SELECT report_id, members
       FROM reports
@@ -249,17 +252,19 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
     if (!report) {
       return res.status(404).json({ message: "No report found" });
     }
+    /* Update members JSONB */
     const updatedMembers = { ...(report.members || {}) };
-    for (const key in members) {
-      updatedMembers[key] =
-        (updatedMembers[key] || 0) + Number(members[key]);
-    }
+    // Increment ONLY the selected member type
+    updatedMembers[memberType] =
+      (updatedMembers[memberType] || 0) + 1;
+
     await sql`
       UPDATE reports
       SET members = ${updatedMembers}
       WHERE report_id = ${report.report_id}
     `;
 
+    /* City trigger */
     if (cityId) {
       await sql`
         UPDATE cities
@@ -268,6 +273,7 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
       `;
     }
 
+    /* Trip type trigger */
     if (tripTypeId) {
       await sql`
         UPDATE trip_types
@@ -275,14 +281,14 @@ export async function updateReportAfterSubmittingTripForm(req, res) {
         WHERE id = ${tripTypeId}
       `;
     }
-
     res.json({
-      message: "Members, city, and trip type updated successfully",
-      members: updatedMembers
+      message: "Trip analytics updated successfully",
+      members: updatedMembers,
     });
-
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to update trip analytics" });
+    console.error("Update report error:", err);
+    res.status(500).json({
+      message: "Failed to update trip analytics",
+    });
   }
 }
