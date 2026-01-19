@@ -6,12 +6,18 @@ export function mapLocationRow(row) {
     const base =
         process.env.PUBLIC_BASE_URL ||
         process.env.RENDER_EXTERNAL_URL ||
-        "http://localhost:5000";
+        "";
+
+    const coverPhotoReference = row.cover_photo_reference ?? null;
+
+    const coverPhotoUrl =
+        coverPhotoReference && base
+            ? `${base}/api/photos?ref=${encodeURIComponent(coverPhotoReference)}&maxWidth=800`
+            : null;
 
     return {
         id: row.id,
         cityId: row.city_id,
-
         name: row.name,
         //category: row.category,
         categoryId: row.category_id ?? null,
@@ -35,7 +41,10 @@ export function mapLocationRow(row) {
 
         tripTypes: row.trip_types || [],
 
-        coverPhotoReference: ref,
-        coverPhotoUrl: ref ? `${base}/api/photos/${encodeURIComponent(ref)}?maxWidth=800` : null,
+        // coverPhotoReference: ref,
+        // coverPhotoUrl: ref ? `${base}/api/photos/${encodeURIComponent(ref)}?maxWidth=800` : null,
+        // ✅ الصور:
+        coverPhotoReference,
+        coverPhotoUrl,
     };
 }
