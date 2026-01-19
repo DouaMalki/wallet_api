@@ -53,8 +53,20 @@ export async function getRulesBySlug(req, res) {
             return res.json({ slug, dayPattern: [] });
         }
 
+        // const ruleJson = row.rule_json || {};
+        // const dayPattern = Array.isArray(ruleJson.dayPattern) ? ruleJson.dayPattern : [];
+
         const ruleJson = row.rule_json || {};
-        const dayPattern = Array.isArray(ruleJson.dayPattern) ? ruleJson.dayPattern : [];
+        if (typeof ruleJson === "string") {
+            try { ruleJson = JSON.parse(ruleJson); } catch { ruleJson = {}; }
+        }
+
+        // ✅ يدعم day_pattern أو dayPattern
+        const rawDayPattern = ruleJson.day_pattern ?? ruleJson.dayPattern ?? [];
+
+        // ✅ تأكد إنه Array
+        const dayPattern = Array.isArray(rawDayPattern) ? rawDayPattern : [];
+
 
         return res.json({
             slug: row.trip_type_slug,

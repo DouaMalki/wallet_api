@@ -13,7 +13,7 @@ import citiesRouter from "./routers/citiesRouter.js";
 import tripTypesRouter from "./routers/tripTypesRouter.js";
 import tripTypeRulesRouter from "./routers/tripTypeRulesRouter.js";
 import adminRouter from "./routers/adminRouter.js";
-// import saveRouter from "./routers/saveRouter.js";
+import saveRouter from "./routers/saveRouter.js";
 import categoriesRouter from "./routers/categoriesRouter.js";
 import surveyRouter from "./routers/surveyRouter.js";
 import browseRouter from "./routers/browseRouter.js";
@@ -42,6 +42,7 @@ app.use("/api", surveyRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/browse", browseRouter);
+app.use("/api/saved-locations", saveRouter);
 
 
 // routers created by shahd
@@ -52,7 +53,7 @@ app.use("/api/trip_type_rules", tripTypeRulesRouter);
 app.use("/api/categories", categoriesRouter);
 
 
-// app.use("/api/saved-locations", saveRouter);
+
 
 // To test that the application connected to the database
 const PORT = process.env.PORT || 5000;
