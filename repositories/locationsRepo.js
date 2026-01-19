@@ -28,6 +28,8 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
 
       COALESCE(tt.trip_types, ARRAY[]::text[]) AS trip_types
 
+      cp.photo_reference AS cover_photo_reference
+
     FROM locations l
     LEFT JOIN categories c ON c.id = l.category_id
 
@@ -38,6 +40,16 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
       JOIN trip_types tt ON tt.id = ltt.trip_type_id
       WHERE ltt.location_id = l.id
     ) tt ON TRUE
+
+     --  one photo per location (best for cards/plan)
+    LEFT JOIN LATERAL (
+  SELECT lp.photo_reference
+  FROM location_photos lp
+  WHERE lp.location_id = l.id
+  ORDER BY lp.is_primary DESC, lp.created_at DESC
+  LIMIT 1
+) cp ON TRUE
+
 
     WHERE 1=1
       ${cityId ? sql`AND l.city_id = ${cityId}` : sql``}

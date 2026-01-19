@@ -1,5 +1,13 @@
 // wallet_api/mappers/locationMapper.js
 export function mapLocationRow(row) {
+    const ref = row.cover_photo_reference || null;
+
+    // مهم: base URL من env عشان يشتغل محلياً وعلى Render
+    const base =
+        process.env.PUBLIC_BASE_URL ||
+        process.env.RENDER_EXTERNAL_URL ||
+        "http://localhost:5000";
+
     return {
         id: row.id,
         cityId: row.city_id,
@@ -26,5 +34,8 @@ export function mapLocationRow(row) {
         recommendedFor: row.recommended_for || [],
 
         tripTypes: row.trip_types || [],
+
+        coverPhotoReference: ref,
+        coverPhotoUrl: ref ? `${base}/api/photos/${encodeURIComponent(ref)}?maxWidth=800` : null,
     };
 }
