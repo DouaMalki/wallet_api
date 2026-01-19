@@ -21,50 +21,36 @@ export async function updateName(req, res) {
   }
 }
 
-export async function checkEmailUniqueness(req, res) {
-  const { user_id, email } = req.body;
+export async function updateTheme(req, res) {
+  const { user_id, theme } = req.body;
 
-  if (!user_id || !email) {
-    return res.status(400).json({ message: "Missing required fields" });
+  if (!user_id || !theme) {
+    return res.status(400).json({ message: "Missing fields" });
   }
 
-  try {
-    const result = await sql`
-      SELECT user_id
-      FROM users
-      WHERE email = ${email}
-        AND user_id != ${user_id}
-    `;
+  const result = await sql`
+    UPDATE users
+    SET theme = ${theme}
+    WHERE user_id = ${user_id}
+    RETURNING theme
+  `;
 
-    res.status(200).json({
-      isUnique: result.length === 0,
-    });
-  } catch (err) {
-    console.error("Check email uniqueness error:", err);
-    res.status(500).json({ message: "Failed to check email" });
-  }
+  res.json(result[0]);
 }
 
-export async function updateEmail(req, res) {
-  const { user_id, email } = req.body;
+export async function updateLanguage(req, res) {
+  const { user_id, language } = req.body;
 
-  if (!user_id || !email) {
-    return res.status(400).json({ message: "Missing required fields" });
+  if (!user_id || !language) {
+    return res.status(400).json({ message: "Missing fields" });
   }
 
-  try {
-    const result = await sql`
-      UPDATE users
-      SET email = ${email}
-      WHERE user_id = ${user_id}
-      RETURNING user_id, email
-    `;
+  const result = await sql`
+    UPDATE users
+    SET language = ${language}
+    WHERE user_id = ${user_id}
+    RETURNING language
+  `;
 
-    res.status(200).json(result[0]);
-  } catch (err) {
-    console.error("Update email error:", err);
-    res.status(500).json({ message: "Failed to update email" });
-  }
+  res.json(result[0]);
 }
-
-
