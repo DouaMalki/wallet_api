@@ -51,14 +51,13 @@ export async function getAllCategories(req, res) {
 
 /**
  * GET /api/browse/categories/featured
- * Returns only the 4 main categories you want.
- * NOTE: This matches using category.slug values.
- * Make sure your slugs exist as: restaurant, nature-parks (or parks), museum, cafe
+ * Returns only the 4 main categories I want.
+ * This matches using category.slug values.
  */
 export async function getFeaturedCategories(req, res) {
   try {
-    // Adjust these slugs to match YOUR database slugs exactly
-    const FEATURED = ["restaurant", "nature-parks", "museum", "cafe"];
+    
+    const FEATURED = ["restaurant", "park", "museum", "cafe"];
 
     const cats = await sql`
       SELECT id, slug, name, name_ar
@@ -67,7 +66,7 @@ export async function getFeaturedCategories(req, res) {
       ORDER BY
         CASE slug
           WHEN 'restaurant' THEN 1
-          WHEN 'nature-parks' THEN 2
+          WHEN 'park' THEN 2
           WHEN 'museum' THEN 3
           WHEN 'cafe' THEN 4
           ELSE 99
@@ -150,14 +149,6 @@ export async function getLocationsByCity(req, res) {
 
 /**
  * GET /api/browse/city-sections?city=Ramallah&limit=6
- *
- * Returns your exact UI structure:
- * - restaurants
- * - parks
- * - museums
- * - cafes
- * - other (everything else)
- *
  * "Top" is based on rating (then user_ratings_total).
  */
 export async function getCitySections(req, res) {
@@ -172,11 +163,10 @@ export async function getCitySections(req, res) {
     const city = await findCityByQuery(cityQuery);
     if (!city) return res.status(404).json({ message: `City not found: ${cityQuery}` });
 
-    // IMPORTANT: adjust these slugs to match your DB!
-    // "Nature & Parks" might be slugged as "nature-parks" or "parks"
+    
     const S = {
       restaurant: "restaurant",
-      parks: "nature-parks",
+      parks: "park",
       museum: "museum",
       cafe: "cafe",
     };
@@ -195,7 +185,7 @@ export async function getCitySections(req, res) {
     const museumCat = catMap.get(S.museum);
     const cafeCat = catMap.get(S.cafe);
 
-    // If any is missing, fail clearly (so you know to fix slugs)
+    // If any is missing, fail clearly 
     const missing = [];
     if (!restaurantCat) missing.push(S.restaurant);
     if (!parksCat) missing.push(S.parks);
