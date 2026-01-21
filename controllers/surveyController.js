@@ -34,3 +34,33 @@ export async function getProblemTypes(req, res) {
   }
 }
 
+export async function getPendingSurveys(req, res) {
+  const { user_id } = req.body;
+
+  if (!user_id) {
+    return res.status(400).json({
+      message: "Missing required field: user_id",
+    });
+  }
+
+  try {
+    const result = await sql`
+      SELECT
+        id,
+        COALESCE(title, 'Untitled Trip') AS name
+      FROM saved_trip_plans
+      WHERE user_id = ${user_id}
+        AND saved = true
+        AND answered_survey = false
+      ORDER BY created_at DESC
+    `;
+
+    res.status(200).json(result);
+
+  } catch (err) {
+    console.error("Get pending surveys error:", err);
+    res.status(500).json({
+      message: "Failed to fetch pending surveys",
+    });
+  }
+}
