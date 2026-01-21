@@ -15,7 +15,6 @@ export async function getProblemTypes(req, res) {
     }
     const problemTypes = result[0].problem_types;
 
-    // JSONB ARRAY
     if (!Array.isArray(problemTypes)) {
       return res.status(400).json({
         message: "problem_types must be an array",
@@ -34,6 +33,10 @@ export async function getProblemTypes(req, res) {
   }
 }
 
+/* Get the trip plans for the given user_id where
+   - answered_survey = FALSE
+   - saved = TRUE
+*/
 export async function getPendingSurveys(req, res) {
   const { user_id } = req.body;
 
@@ -61,6 +64,42 @@ export async function getPendingSurveys(req, res) {
     console.error("Get pending surveys error:", err);
     res.status(500).json({
       message: "Failed to fetch pending surveys",
+    });
+  }
+}
+
+
+/* Get the locations of a trip plan for survey */
+export async function getSurveyLocations(req, res) {
+  const { plan_id } = req.body;
+
+  if (!plan_id) {
+    return res.status(400).json({
+      message: "Missing plan_id",
+    });
+  }
+
+  try {
+    const locations = await sql`
+      SELECT
+        l.id            AS location_id,
+        l.name          AS name,
+        l.google_place_id,
+        i.position
+      FROM saved_trip_plan_days d
+      JOIN saved_trip_plan_items i
+        ON i.plan_day_id = d.id
+      JOIN locations l
+        ON l.id = i.location_id
+      WHERE d.plan_id = ${plan_id}
+      ORDER BY d.day_key, i.position
+    `;
+
+    res.json(locations);
+  } catch (err) {
+    console.error("Get survey locations error:", err);
+    res.status(500).json({
+      message: "Failed to fetch survey locations",
     });
   }
 }
