@@ -289,7 +289,7 @@ export async function getCitySections(req, res) {
 /**
  * GET /api/browse/location/:locationId
  * Returns 1 location from DB + its city + category info
- * Normalizes recommended_for to TEXT[] (even if stored as JSON string)
+ * NOTE: recommended_for returned as-is (TEXT[] or string), frontend will normalize safely.
  */
 export async function getLocationById(req, res) {
   const { locationId } = req.params;
@@ -312,18 +312,7 @@ export async function getLocationById(req, res) {
         l.rating,
         l.open_hours,
         l.closed_days,
-
-        -- ✅ recommended_for normalization:
-        -- If it's already TEXT[] -> keep it.
-        -- If it's a JSON string like ["solo","family"] -> convert to TEXT[].
-        CASE
-          WHEN pg_typeof(l.recommended_for)::text = 'text[]' THEN l.recommended_for
-          WHEN l.recommended_for IS NULL THEN ARRAY[]::text[]
-          ELSE
-            (SELECT COALESCE(array_agg(x), ARRAY[]::text[])
-             FROM jsonb_array_elements_text(l.recommended_for::jsonb) AS x)
-        END AS recommended_for,
-
+        l.recommended_for,
         l.category_id,
         l.user_ratings_total,
         c.slug AS category_slug,
@@ -350,6 +339,7 @@ export async function getLocationById(req, res) {
     return res.status(500).json({ message: "Internal server error" });
   }
 }
+
 
 
 
