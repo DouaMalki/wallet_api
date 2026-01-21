@@ -106,9 +106,6 @@ export async function getSurveyLocations(req, res) {
   }
 }
 
-import { sql } from "../config/db.js";
-
-import { sql } from "../config/db.js";
 
 /*
   Update locations rating and user_rating_total
