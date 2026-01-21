@@ -7,7 +7,8 @@ import {
     publishTripPlan,
     updateProblemsInReports,
     updateFinishedTrips,
-    updateAnsweredSurveys
+    updateAnsweredSurveys,
+    markSurveyAsAnswered
 } from "../controllers/surveyController.js";
 
 
@@ -25,5 +26,7 @@ router.post("/survey/publish", publishTripPlan);
 router.post("/survey/updateProblems", updateProblemsInReports);
 router.post("/survey/updateFinished", updateFinishedTrips);
 router.post("/survey/updateAnswered", updateAnsweredSurveys);
+router.post("/survey/markAnswered", markSurveyAsAnswered);
+
 
 export default router;
