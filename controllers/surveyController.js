@@ -85,6 +85,8 @@ export async function getSurveyLocations(req, res) {
         l.id            AS location_id,
         l.name          AS name,
         l.google_place_id,
+        l.rating,
+        l.user_rating_total,
         i.position
       FROM saved_trip_plan_days d
       JOIN saved_trip_plan_items i
@@ -100,6 +102,72 @@ export async function getSurveyLocations(req, res) {
     console.error("Get survey locations error:", err);
     res.status(500).json({
       message: "Failed to fetch survey locations",
+    });
+  }
+}
+
+import { sql } from "../config/db.js";
+
+import { sql } from "../config/db.js";
+
+/*
+  Update locations rating and user_rating_total
+  Formula:
+  new_rating = (user_rating_total * rating + given_rating)
+  user_rating_total = (user_rating_total + 1)
+*/
+export async function updateLocationsRating(req, res) {
+  const { locationRatings } = req.body;
+
+  if (
+    !locationRatings ||
+    typeof locationRatings !== "object" ||
+    Object.keys(locationRatings).length === 0
+  ) {
+    return res.status(400).json({
+      message: "locationRatings is required",
+    });
+  }
+
+  try {
+    for (const locationId in locationRatings) {
+      const givenRating = Number(locationRatings[locationId]);
+
+      if (givenRating < 1 || givenRating > 5) continue;
+
+      /* Get current rating data */
+      const result = await sql`
+        SELECT rating, user_rating_total
+        FROM locations
+        WHERE id = ${locationId}
+      `;
+
+      if (result.length === 0) continue;
+
+      const { rating, user_rating_total } = result[0];
+
+      const newRating =
+        (user_rating_total * rating + givenRating) /
+        (user_rating_total + 1);
+
+      /* Update location */
+      await sql`
+        UPDATE locations
+        SET
+          rating = ${newRating},
+          user_rating_total = user_rating_total + 1
+        WHERE id = ${locationId}
+      `;
+    }
+
+    res.status(200).json({
+      message: "Locations ratings updated successfully",
+    });
+
+  } catch (err) {
+    console.error("Update location rating error:", err);
+    res.status(500).json({
+      message: "Failed to update locations rating",
     });
   }
 }
