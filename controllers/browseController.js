@@ -286,6 +286,59 @@ export async function getCitySections(req, res) {
   }
 }
 
+/**
+ * GET /api/browse/location/:locationId
+ * Returns 1 location from DB + its city + category info
+ */
+export async function getLocationById(req, res) {
+  const { locationId } = req.params;
+
+  if (!locationId) {
+    return res.status(400).json({ message: "Missing locationId param" });
+  }
+
+  try {
+    const rows = await sql`
+      SELECT
+        l.id,
+        l.city_id,
+        l.name,
+        l.lat,
+        l.lng,
+        l.estimated_time,
+        l.max_cost,
+        l.rating,
+        l.open_hours,
+        l.closed_days,
+        l.recommended_for,
+        l.category_id,
+        l.user_ratings_total,
+        c.slug AS category_slug,
+        c.name AS category_name,
+        c.name_ar AS category_name_ar,
+        ci.name AS city_name,
+        ci.name_ar AS city_name_ar
+      FROM locations l
+      JOIN categories c ON c.id = l.category_id
+      JOIN cities ci ON ci.id = l.city_id
+      WHERE l.id = ${locationId}
+      LIMIT 1
+    `;
+
+    const location = rows[0];
+
+    if (!location) {
+      return res.status(404).json({ message: "Location not found" });
+    }
+
+    return res.status(200).json({ location });
+  } catch (err) {
+    console.error("getLocationById error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+
 
 // import { sql } from "../config/db.js";
 
