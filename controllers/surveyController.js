@@ -166,3 +166,33 @@ export async function updateLocationsRating(req, res) {
   }
 }
 
+
+export async function publishTripPlan(req, res) {
+  const { plan_id, title } = req.body;
+
+  if (!plan_id || !title) {
+    return res.status(400).json({
+      message: "plan_id and title are required",
+    });
+  }
+
+  try {
+    await sql`
+      UPDATE saved_trip_plans
+      SET
+        published = true,
+        title = ${title},
+        updated_at = now()
+      WHERE id = ${plan_id}
+    `;
+
+    res.status(200).json({
+      message: "Trip plan published successfully",
+    });
+  } catch (err) {
+    console.error("Publish trip plan error:", err);
+    res.status(500).json({
+      message: "Failed to publish trip plan",
+    });
+  }
+}

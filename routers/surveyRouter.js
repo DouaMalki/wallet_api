@@ -3,7 +3,8 @@ import {
     getProblemTypes,
     getPendingSurveys,
     getSurveyLocations,
-    updateLocationsRating
+    updateLocationsRating,
+    publishTripPlan
 } from "../controllers/surveyController.js";
 
 
@@ -13,5 +14,6 @@ router.get("/survey/problems", getProblemTypes);
 router.post("/survey/pending", getPendingSurveys);
 router.post("/survey/locations", getSurveyLocations);
 router.post("/survey/locations/rate", updateLocationsRating);
+router.post("/survey/publish", publishTripPlan);
 
 export default router;
