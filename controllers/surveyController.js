@@ -116,43 +116,40 @@ export async function getSurveyLocations(req, res) {
 export async function updateLocationsRating(req, res) {
   const { locationRatings } = req.body;
 
-  if (
-    !locationRatings ||
-    typeof locationRatings !== "object" ||
-    Object.keys(locationRatings).length === 0
-  ) {
-    return res.status(400).json({
-      message: "locationRatings is required",
-    });
+  if (!locationRatings || typeof locationRatings !== "object") {
+    return res.status(400).json({ message: "locationRatings is required" });
   }
 
   try {
     for (const locationId in locationRatings) {
       const givenRating = Number(locationRatings[locationId]);
-
       if (givenRating < 1 || givenRating > 5) continue;
 
-      /* Get current rating data */
       const result = await sql`
-        SELECT rating, user_rating_total
+        SELECT
+          COALESCE(rating, 0) AS rating,
+          COALESCE(user_ratings_total, 0) AS user_ratings_total
         FROM locations
         WHERE id = ${locationId}
       `;
 
       if (result.length === 0) continue;
 
-      const { rating, user_rating_total } = result[0];
+      const { rating, user_ratings_total } = result[0];
 
-      const newRating =
-        (user_rating_total * rating + givenRating) /
-        (user_rating_total + 1);
+      const newRating = Number(
+        (
+          (user_ratings_total * rating + givenRating) /
+          (user_ratings_total + 1)
+        ).toFixed(2)
+      );
 
-      /* Update location */
       await sql`
         UPDATE locations
         SET
           rating = ${newRating},
-          user_rating_total = user_rating_total + 1
+          user_ratings_total = ${user_ratings_total + 1},
+          updated_at = now()
         WHERE id = ${locationId}
       `;
     }
@@ -168,3 +165,4 @@ export async function updateLocationsRating(req, res) {
     });
   }
 }
+
