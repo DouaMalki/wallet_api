@@ -17,6 +17,9 @@ import saveRouter from "./routers/saveRouter.js";
 import categoriesRouter from "./routers/categoriesRouter.js";
 import surveyRouter from "./routers/surveyRouter.js";
 import browseRouter from "./routers/browseRouter.js";
+import photosRouter from "./routers/photosRouter.js";
+import saveTripPlanRouter from "./routers/saveTripPlanRouter.js";
+
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
@@ -51,6 +54,9 @@ app.use("/api/cities", citiesRouter);
 app.use("/api/trip-types", tripTypesRouter);
 app.use("/api/trip_type_rules", tripTypeRulesRouter);
 app.use("/api/categories", categoriesRouter);
+app.use("/api/photos", photosRouter);
+app.use("/api/saved_trip_plans", saveTripPlanRouter);
+
 
 
 
