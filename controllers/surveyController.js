@@ -50,7 +50,9 @@ export async function getPendingSurveys(req, res) {
     const result = await sql`
       SELECT
         id,
-        COALESCE(title, 'Untitled Trip') AS name
+        COALESCE(title, 'Untitled Trip') AS name,
+        city_id,
+        trip_type_slug
       FROM saved_trip_plans
       WHERE user_id = ${user_id}
         AND saved = true
