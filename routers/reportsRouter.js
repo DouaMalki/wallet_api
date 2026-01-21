@@ -5,7 +5,6 @@ import {
   getSystemGrowth,
   getUsersActivity,
   updateReportAfterSystemSettingsUpdate,
-  updateReportAfterSurvey,
   updateReportAfterSubmittingTripForm
 } from "../controllers/reportsController.js";
 
@@ -23,7 +22,5 @@ router.get("/activityReport", getUsersActivity);
 router.post("/trip-form", updateReportAfterSubmittingTripForm);
 // After updating system settings
 router.post("/system-settings", updateReportAfterSystemSettingsUpdate);
-// After answering / not answering a survey
-router.post("/survey", updateReportAfterSurvey);
 
 export default router;

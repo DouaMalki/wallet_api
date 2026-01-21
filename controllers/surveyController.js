@@ -1,38 +1,5 @@
 import { sql } from "../config/db.js";
 
-export async function getProblemTypes(req, res) {
-  try {
-    const result = await sql`
-      SELECT problem_types
-      FROM system_settings
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-    if (result.length === 0) {
-      return res.status(404).json({
-        message: "System settings not found",
-      });
-    }
-    const problemTypes = result[0].problem_types;
-
-    if (!Array.isArray(problemTypes)) {
-      return res.status(400).json({
-        message: "problem_types must be an array",
-      });
-    }
-    const problems = problemTypes.map((item) => ({
-      id: item,
-      label: item.replace(/_/g, " "),
-    }));
-    return res.status(200).json(problems);
-  } catch (err) {
-    console.error("Get problem types error:", err);
-    return res.status(500).json({
-      message: "Failed to fetch problem types",
-    });
-  }
-}
-
 /* Get the trip plans for the given user_id where
    - answered_survey = FALSE
    - saved = TRUE
@@ -66,6 +33,40 @@ export async function getPendingSurveys(req, res) {
     console.error("Get pending surveys error:", err);
     res.status(500).json({
       message: "Failed to fetch pending surveys",
+    });
+  }
+}
+
+
+export async function getProblemTypes(req, res) {
+  try {
+    const result = await sql`
+      SELECT problem_types
+      FROM system_settings
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    if (result.length === 0) {
+      return res.status(404).json({
+        message: "System settings not found",
+      });
+    }
+    const problemTypes = result[0].problem_types;
+
+    if (!Array.isArray(problemTypes)) {
+      return res.status(400).json({
+        message: "problem_types must be an array",
+      });
+    }
+    const problems = problemTypes.map((item) => ({
+      id: item,
+      label: item.replace(/_/g, " "),
+    }));
+    return res.status(200).json(problems);
+  } catch (err) {
+    console.error("Get problem types error:", err);
+    return res.status(500).json({
+      message: "Failed to fetch problem types",
     });
   }
 }
@@ -193,6 +194,133 @@ export async function publishTripPlan(req, res) {
     console.error("Publish trip plan error:", err);
     res.status(500).json({
       message: "Failed to publish trip plan",
+    });
+  }
+}
+
+
+/* After Survey Submission */
+/* Update Problems */
+export async function updateProblemsInReports(req, res) {
+  try {
+    const problems = req.body.problems ?? [];
+
+    const report = (await sql`
+      SELECT *
+      FROM reports
+      ORDER BY created_at DESC
+      LIMIT 1
+    `)[0];
+
+    const mainProblem = { ...report.main_problem };
+    problems.forEach(p => {
+      mainProblem[p] = (mainProblem[p] || 0) + 1;
+    });
+
+    await sql`
+      UPDATE reports
+      SET
+        main_problem = ${mainProblem}
+      WHERE report_id = ${report.report_id}
+    `;
+
+    res.json({ message: "Report updated after survey" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to update survey report" });
+  }
+}
+
+/* Update Finished Trips */
+export async function updateFinishedTrips(req, res) {
+  const { tripCompleted } = req.body;
+
+  if (typeof tripCompleted !== "boolean") {
+    return res.status(400).json({
+      message: "tripCompleted must be boolean",
+    });
+  }
+
+  try {
+    const report = (await sql`
+      SELECT report_id, finished_trips
+      FROM reports
+      ORDER BY created_at DESC
+      LIMIT 1
+    `)[0];
+
+    const finishedTrips = {
+      ...report.finished_trips,
+      [tripCompleted ? "yes" : "no"]:
+        (report.finished_trips?.[tripCompleted ? "yes" : "no"] || 0) + 1,
+    };
+
+    await sql`
+      UPDATE reports
+      SET finished_trips = ${finishedTrips}
+      WHERE report_id = ${report.report_id}
+    `;
+
+    res.json({ message: "finished_trips updated" });
+  } catch (err) {
+    console.error("Update finished_trips error:", err);
+    res.status(500).json({ message: "Failed to update finished_trips" });
+  }
+}
+
+/* Update Answered Surveys */
+export async function updateAnsweredSurveys(req, res) {
+  try {
+    const report = (await sql`
+      SELECT report_id, answered_surveys
+      FROM reports
+      ORDER BY created_at DESC
+      LIMIT 1
+    `)[0];
+
+    const answeredSurveys = {
+      ...report.answered_surveys,
+      yes: (report.answered_surveys?.yes || 0) + 1,
+    };
+
+    await sql`
+      UPDATE reports
+      SET answered_surveys = ${answeredSurveys}
+      WHERE report_id = ${report.report_id}
+    `;
+
+    res.json({ message: "answered_surveys updated" });
+  } catch (err) {
+    console.error("Update answered_surveys error:", err);
+    res.status(500).json({ message: "Failed to update answered_surveys" });
+  }
+}
+
+/* Mark survey as answered */
+export async function markSurveyAsAnswered(req, res) {
+  const { plan_id } = req.body;
+
+  if (!plan_id) {
+    return res.status(400).json({
+      message: "Missing plan_id",
+    });
+  }
+
+  try {
+    await sql`
+      UPDATE saved_trip_plans
+      SET
+        answered_survey = true
+      WHERE id = ${plan_id}
+    `;
+
+    res.status(200).json({
+      message: "Survey marked as answered",
+    });
+  } catch (err) {
+    console.error("Mark survey answered error:", err);
+    res.status(500).json({
+      message: "Failed to mark survey as answered",
     });
   }
 }
