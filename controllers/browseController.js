@@ -127,13 +127,29 @@ export async function getLocationsByCity(req, res) {
         l.user_ratings_total,
         c.slug AS category_slug,
         c.name AS category_name,
-        c.name_ar AS category_name_ar
+        c.name_ar AS category_name_ar,
+
+        --  photo fields
+        p.source AS photo_source,
+        p.photo_url,
+        p.photo_reference
+
       FROM locations l
       JOIN categories c ON c.id = l.category_id
+
+      LEFT JOIN LATERAL (
+        SELECT source, photo_url, photo_reference
+        FROM location_photos
+        WHERE location_id = l.id
+        ORDER BY is_primary DESC, created_at DESC
+        LIMIT 1
+      ) p ON TRUE
+
       WHERE l.city_id = ${city.id}
         ${category ? sql`AND l.category_id = ${category.id}` : sql``}
       ORDER BY l.rating DESC NULLS LAST, l.user_ratings_total DESC NULLS LAST, l.name ASC
     `;
+
 
     return res.status(200).json({
       city,
@@ -201,28 +217,44 @@ export async function getCitySections(req, res) {
 
     // Helper query maker
     const fetchTop = async (categoryId) => {
-      return await sql`
-        SELECT
-          l.id,
-          l.city_id,
-          l.name,
-          l.lat,
-          l.lng,
-          l.estimated_time,
-          l.max_cost,
-          l.rating,
-          l.open_hours,
-          l.closed_days,
-          l.recommended_for,
-          l.category_id,
-          l.user_ratings_total
-        FROM locations l
-        WHERE l.city_id = ${city.id}
-          AND l.category_id = ${categoryId}
-        ORDER BY l.rating DESC NULLS LAST, l.user_ratings_total DESC NULLS LAST, l.name ASC
-        LIMIT ${limit}
-      `;
-    };
+  return await sql`
+    SELECT
+      l.id,
+      l.city_id,
+      l.name,
+      l.lat,
+      l.lng,
+      l.estimated_time,
+      l.max_cost,
+      l.rating,
+      l.open_hours,
+      l.closed_days,
+      l.recommended_for,
+      l.category_id,
+      l.user_ratings_total,
+
+      --  photo fields
+      p.source AS photo_source,
+      p.photo_url,
+      p.photo_reference
+
+    FROM locations l
+
+    LEFT JOIN LATERAL (
+      SELECT source, photo_url, photo_reference
+      FROM location_photos
+      WHERE location_id = l.id
+      ORDER BY is_primary DESC, created_at DESC
+      LIMIT 1
+    ) p ON TRUE
+
+    WHERE l.city_id = ${city.id}
+      AND l.category_id = ${categoryId}
+    ORDER BY l.rating DESC NULLS LAST, l.user_ratings_total DESC NULLS LAST, l.name ASC
+    LIMIT ${limit}
+  `;
+};
+
 
     const restaurants = await fetchTop(restaurantCat.id);
     const parks = await fetchTop(parksCat.id);
@@ -247,9 +279,24 @@ export async function getCitySections(req, res) {
         l.user_ratings_total,
         c.slug AS category_slug,
         c.name AS category_name,
-        c.name_ar AS category_name_ar
+        c.name_ar AS category_name_ar,
+
+        --  photo fields
+        p.source AS photo_source,
+        p.photo_url,
+        p.photo_reference
+
       FROM locations l
       JOIN categories c ON c.id = l.category_id
+
+      LEFT JOIN LATERAL (
+        SELECT source, photo_url, photo_reference
+        FROM location_photos
+        WHERE location_id = l.id
+        ORDER BY is_primary DESC, created_at DESC
+        LIMIT 1
+      ) p ON TRUE
+
       WHERE l.city_id = ${city.id}
         AND l.category_id <> ALL(${[
           restaurantCat.id,
@@ -260,6 +307,7 @@ export async function getCitySections(req, res) {
       ORDER BY l.rating DESC NULLS LAST, l.user_ratings_total DESC NULLS LAST, l.name ASC
       LIMIT ${limit}
     `;
+
 
     return res.status(200).json({
       city,
@@ -312,17 +360,37 @@ export async function getLocationById(req, res) {
         l.rating,
         l.open_hours,
         l.closed_days,
+
+        
         l.recommended_for,
+
         l.category_id,
         l.user_ratings_total,
+
         c.slug AS category_slug,
         c.name AS category_name,
         c.name_ar AS category_name_ar,
+
         ci.name AS city_name,
-        ci.name_ar AS city_name_ar
+        ci.name_ar AS city_name_ar,
+
+        -- ONE photo (primary first)
+        p.source AS photo_source,
+        p.photo_reference,
+        p.photo_url
+
       FROM locations l
       JOIN categories c ON c.id = l.category_id
       JOIN cities ci ON ci.id = l.city_id
+
+      LEFT JOIN LATERAL (
+        SELECT source, photo_reference, photo_url
+        FROM location_photos
+        WHERE location_id = l.id
+        ORDER BY is_primary DESC, created_at DESC
+        LIMIT 1
+      ) p ON TRUE
+
       WHERE l.id = ${locationId}
       LIMIT 1
     `;
