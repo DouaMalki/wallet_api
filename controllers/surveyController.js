@@ -69,7 +69,6 @@ export async function getPendingSurveys(req, res) {
 }
 
 
-/* Get the locations of a trip plan for survey */
 export async function getSurveyLocations(req, res) {
   const { plan_id } = req.body;
 
@@ -82,22 +81,22 @@ export async function getSurveyLocations(req, res) {
   try {
     const locations = await sql`
       SELECT
-        l.id            AS location_id,
-        l.name          AS name,
+        l.id AS location_id,
+        l.name,
         l.google_place_id,
         l.rating,
-        l.user_rating_total,
+        l.user_ratings_total,
         i.position
-      FROM saved_trip_plan_days d
-      JOIN saved_trip_plan_items i
-        ON i.plan_day_id = d.id
+      FROM saved_trip_plan_items i
+      JOIN saved_trip_plan_days d
+        ON d.id = i.plan_day_id
       JOIN locations l
         ON l.id = i.location_id
       WHERE d.plan_id = ${plan_id}
-      ORDER BY d.day_key, i.position
+      ORDER BY i.position
     `;
 
-    res.json(locations);
+    res.status(200).json(locations);
   } catch (err) {
     console.error("Get survey locations error:", err);
     res.status(500).json({
@@ -105,7 +104,6 @@ export async function getSurveyLocations(req, res) {
     });
   }
 }
-
 
 /*
   Update locations rating and user_rating_total
