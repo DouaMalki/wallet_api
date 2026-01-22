@@ -72,29 +72,39 @@ export async function getProblemTypes(req, res) {
 }
 
 
+/* Get the locations of a trip plan for survey */
 export async function getSurveyLocations(req, res) {
   const { plan_id } = req.body;
 
   if (!plan_id) {
-    return res.status(400).json({
-      message: "Missing plan_id",
-    });
+    return res.status(400).json({ message: "Missing plan_id" });
   }
 
   try {
     const locations = await sql`
       SELECT
-        l.id AS location_id,
+        l.id            AS location_id,
         l.name,
-        l.google_place_id,
         l.rating,
         l.user_ratings_total,
-        i.position
+        i.position,
+
+        -- cover photo
+        lp.photo_reference,
+        lp.photo_url
+
       FROM saved_trip_plan_items i
-      JOIN saved_trip_plan_days d
-        ON d.id = i.plan_day_id
-      JOIN locations l
-        ON l.id = i.location_id
+      JOIN saved_trip_plan_days d ON d.id = i.plan_day_id
+      JOIN locations l ON l.id = i.location_id
+
+      LEFT JOIN LATERAL (
+        SELECT photo_reference, photo_url
+        FROM location_photos
+        WHERE location_id = l.id
+        ORDER BY is_primary DESC, created_at DESC
+        LIMIT 1
+      ) lp ON TRUE
+
       WHERE d.plan_id = ${plan_id}
       ORDER BY i.position
     `;
@@ -102,11 +112,10 @@ export async function getSurveyLocations(req, res) {
     res.status(200).json(locations);
   } catch (err) {
     console.error("Get survey locations error:", err);
-    res.status(500).json({
-      message: "Failed to fetch survey locations",
-    });
+    res.status(500).json({ message: "Failed to fetch survey locations" });
   }
 }
+
 
 /*
   Update locations rating and user_rating_total
