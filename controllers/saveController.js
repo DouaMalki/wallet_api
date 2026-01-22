@@ -94,22 +94,32 @@ export async function getSavedLocations(req, res) {
     const userId = getAuthUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
-    const saved = await sql`
+    const rows = await sql`
       SELECT
-        saved_location_id AS id,
-        location_id,
-        saved_at
-      FROM saved_location
-      WHERE user_id = ${userId}
-      ORDER BY saved_at DESC
+        sl.saved_location_id AS saved_id,
+        sl.saved_at,
+
+        l.id AS location_id,
+        l.name,
+        l.photo_source,
+        l.photo_url,
+        l.photo_reference,
+        l.rating,
+        l.lat,
+        l.lng
+      FROM saved_location sl
+      JOIN locations l ON l.id = sl.location_id
+      WHERE sl.user_id = ${userId}
+      ORDER BY sl.saved_at DESC
     `;
 
-    return res.status(200).json({ saved_locations: saved });
+    return res.status(200).json({ saved_locations: rows });
   } catch (err) {
     console.error("getSavedLocations error:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 }
+
 
 // GET /api/saved-locations/check/:locationId
 export async function isLocationSaved(req, res) {
