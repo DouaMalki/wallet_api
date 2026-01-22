@@ -191,13 +191,6 @@ export async function createSavedTripPlan({
         return h * 60 + m;
     }
 
-    function minutesToTime(mins) {
-        const h = Math.floor(mins / 60);
-        const m = mins % 60;
-        const pad = (n) => String(n).padStart(2, "0");
-        return `${pad(h)}:${pad(m)}:00`;
-    }
-
 
 
     if (!cityId) throw new Error("Missing tripRequest.destinationId");
