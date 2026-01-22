@@ -182,52 +182,6 @@ export async function updateReportAfterSystemSettingsUpdate(req, res) {
   }
 }
 
-/* After Survey Submission */
-export async function updateReportAfterSurvey(req, res) {
-  try {
-    const answered = req.body.answered ?? false;
-    const finished = req.body.finished ?? false;
-    const problems = req.body.problems ?? [];
-
-    const report = (await sql`
-      SELECT *
-      FROM reports
-      ORDER BY created_at DESC
-      LIMIT 1
-    `)[0];
-
-    const answeredSurveys = { ...report.answered_surveys };
-    const finishedTrips = { ...report.finished_trips };
-    const mainProblem = { ...report.main_problem };
-
-    answeredSurveys[answered ? "yes" : "no"] =
-      (answeredSurveys[answered ? "yes" : "no"] || 0) + 1;
-
-    if (answered) {
-      finishedTrips[finished ? "yes" : "no"] =
-        (finishedTrips[finished ? "yes" : "no"] || 0) + 1;
-
-      problems.forEach(p => {
-        mainProblem[p] = (mainProblem[p] || 0) + 1;
-      });
-    }
-
-    await sql`
-      UPDATE reports
-      SET
-        answered_surveys = ${answeredSurveys},
-        finished_trips = ${finishedTrips},
-        main_problem = ${mainProblem}
-      WHERE report_id = ${report.report_id}
-    `;
-
-    res.json({ message: "Report updated after survey" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to update survey report" });
-  }
-}
-
 
 
 /* After Trip Form Submission */
