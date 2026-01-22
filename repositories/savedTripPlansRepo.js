@@ -267,8 +267,7 @@ export async function createSavedTripPlan({
     const days = extractDays(finalPlan);
     if (!days.length) throw new Error("finalPlan has no YYYY-MM-DD keys");
 
-    const totalHours = getDayTotalHours(tripRequest, d.dayKey);
-    const polylineSafe = (d.polyline ?? "") || ""; // always string
+
 
     // for (const d of days) {
     //     const dayRes = await sql`
@@ -335,11 +334,11 @@ export async function createSavedTripPlan({
     // }
 
     for (const d of days) {
-        // ✅ خيار A: ساعات اليوم حسب إدخال المستخدم (global/per-day)
         const totalHours = getDayTotalHours(tripRequest, d.dayKey);
-
-        // ✅ لا نريد NULL
-        const polylineSafe = (d.polyline ?? "") || "";
+        const polylineSafe = (d.polyline ?? "") || ""; // always string
+        const legDurationsMin = Array.isArray(d.legDurationsMin) ? d.legDurationsMin : [];
+        //  travel times من Google legs (بالدقائق) - ديناميكي
+        //const legs = Array.isArray(d.legDurationsMin) ? d.legDurationsMin : [];
 
         const dayRes = await sql`
   INSERT INTO saved_trip_plan_days (
@@ -365,14 +364,14 @@ export async function createSavedTripPlan({
   RETURNING id
 `;
 
-
         const planDayId = dayRes?.[0]?.id;
         if (!planDayId) throw new Error("Failed to create saved_trip_plan_days row");
 
-        // ✅ travel times من Google legs (بالدقائق) - ديناميكي
-        const legs = Array.isArray(d.legDurationsMin) ? d.legDurationsMin : [];
+        const legs = legDurationsMin;
 
-        // ✅ وقت بداية/نهاية اليوم (بالدقائق) حسب إدخال المستخدم
+
+
+        // وقت بداية/نهاية اليوم (بالدقائق) حسب إدخال المستخدم
         const { startMin, endMin } = getDayWindowMinutes(tripRequest, d.dayKey);
 
         let cursorMin = startMin;
