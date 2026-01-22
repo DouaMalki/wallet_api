@@ -101,14 +101,28 @@ export async function getSavedLocations(req, res) {
 
         l.id AS location_id,
         l.name,
-        l.photo_source,
-        l.photo_url,
-        l.photo_reference,
-        l.rating,
+        l.google_place_id,
         l.lat,
-        l.lng
+        l.lng,
+        l.rating,
+        l.user_ratings_total,
+
+        -- photo fields (from location_photos)
+        lp.source AS photo_source,
+        lp.photo_url,
+        lp.photo_reference
       FROM saved_location sl
       JOIN locations l ON l.id = sl.location_id
+
+      -- pick ONE photo per location (primary first, else newest)
+      LEFT JOIN LATERAL (
+        SELECT source, photo_url, photo_reference
+        FROM location_photos
+        WHERE location_id = l.id
+        ORDER BY is_primary DESC, created_at DESC
+        LIMIT 1
+      ) lp ON TRUE
+
       WHERE sl.user_id = ${userId}
       ORDER BY sl.saved_at DESC
     `;
