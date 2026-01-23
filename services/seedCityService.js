@@ -570,11 +570,14 @@ export async function seedCityOnDemand({
         }
     }
 
+    console.log("[seed] imported candidates:", placesForGemini.length);
 
     // Gemini only for ones needing it
     const googleIds = placesForGemini.map(p => p.google_place_id);
     const needSet = await getPlacesNeedingGemini(city.id, googleIds);
     const filteredForGemini = placesForGemini.filter(p => needSet.has(p.google_place_id));
+
+    console.log("[seed] need gemini:", filteredForGemini.length);
 
     let geminiEnriched = 0;
     for (const group of chunk(filteredForGemini, batchSize)) {
