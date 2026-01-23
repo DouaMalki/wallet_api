@@ -32,6 +32,8 @@ app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+console.log("UPSTASH URL set?", !!process.env.UPSTASH_REDIS_REST_URL);
+console.log("UPSTASH TOKEN set?", !!process.env.UPSTASH_REDIS_REST_TOKEN);
 
 
 // routers created by doua
