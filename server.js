@@ -19,13 +19,14 @@ import surveyRouter from "./routers/surveyRouter.js";
 import browseRouter from "./routers/browseRouter.js";
 import photosRouter from "./routers/photosRouter.js";
 import saveTripPlanRouter from "./routers/saveTripPlanRouter.js";
-
+import { maybeRateLimit } from "./middleware/rateLimit.js";
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
 
 // middleware
 app.use(rateLimiter);
+app.use(maybeRateLimit());
 app.use(express.json());
 
 app.get("/api/health", (req, res) => {
