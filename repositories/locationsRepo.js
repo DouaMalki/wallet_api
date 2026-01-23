@@ -67,7 +67,6 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
 
     ORDER BY l.created_at DESC
     ${limit ? sql`LIMIT ${limit}` : sql``}
-    //${offset ? sql`OFFSET ${offset}` : sql``}
     ${offset !== null && offset !== undefined ? sql`OFFSET ${offset}` : sql``}
 
   `;
