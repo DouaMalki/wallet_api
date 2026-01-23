@@ -25,7 +25,7 @@ function sleep(ms) {
    ========================= */
 async function getCityOrThrow(cityId) {
     const rows = await sql`
-    SELECT id, name, center_lat, center_lng
+    SELECT id, name, name_ar, center_lat, center_lng
     FROM public.cities
     WHERE id = ${cityId}
     LIMIT 1
@@ -33,6 +33,7 @@ async function getCityOrThrow(cityId) {
     if (!rows?.length) throw new Error(`City not found: ${cityId}`);
     return rows[0];
 }
+
 
 async function getRuleCategoriesByTripTypeSlug(tripTypeSlug) {
     const rows = await sql`
@@ -43,10 +44,30 @@ async function getRuleCategoriesByTripTypeSlug(tripTypeSlug) {
       AND t.slug = ${tripTypeSlug}
     LIMIT 1
   `;
-    const rule = rows?.[0]?.rule_json;
-    const slugs = rule?.required_category_slugs || [];
-    return Array.isArray(slugs) ? slugs.map(s => String(s).toLowerCase().trim()).filter(Boolean) : [];
+
+    const rule = rows?.[0]?.rule_json || {};
+
+    // (1) required_category_slugs
+    const required = Array.isArray(rule?.required_category_slugs)
+        ? rule.required_category_slugs
+        : [];
+
+    // (2) all categories inside day_pattern
+    const dayPattern = Array.isArray(rule?.day_pattern) ? rule.day_pattern : [];
+    const fromPattern = dayPattern.flatMap((item) =>
+        Array.isArray(item?.categories) ? item.categories : []
+    );
+
+    // (3) union + normalize
+    const set = new Set(
+        [...required, ...fromPattern]
+            .map((s) => String(s).toLowerCase().trim())
+            .filter(Boolean)
+    );
+
+    return [...set];
 }
+
 
 async function getCategoriesBySlugs(slugs) {
     if (!slugs?.length) return [];
@@ -58,6 +79,27 @@ async function getCategoriesBySlugs(slugs) {
   `;
     return rows;
 }
+
+function metersToLat(m) { return m / 111320; } // تقريب
+function metersToLng(m, lat) { return m / (111320 * Math.cos((lat * Math.PI) / 180)); }
+
+function jitterPoints(centerLat, centerLng, radiusMeters, count = 6) {
+    // نقاط حول المركز (شكل دائرة)
+    const pts = [{ lat: centerLat, lng: centerLng }];
+    const step = (2 * Math.PI) / count;
+    const r = Math.max(800, Math.min(radiusMeters * 0.6, 3000)); // توازن
+    for (let i = 0; i < count; i++) {
+        const ang = i * step;
+        const dx = Math.cos(ang) * r;
+        const dy = Math.sin(ang) * r;
+        pts.push({
+            lat: centerLat + metersToLat(dy),
+            lng: centerLng + metersToLng(dx, centerLat),
+        });
+    }
+    return pts;
+}
+
 
 /**
  * Returns missing category slugs for given city.
@@ -88,8 +130,65 @@ async function getMissingCategorySlugsForCity(cityId, requiredSlugs) {
     return missing;
 }
 
+
+
+async function getLocationsMissingGeminiForTripType(cityId, tripTypeSlug, limit = 30) {
+    const rows = await sql`
+    SELECT
+      l.google_place_id,
+      l.name,
+      c.slug AS category_slug,
+      l.rating,
+      l.user_ratings_total
+    FROM public.locations l
+    JOIN public.location_trip_types ltt ON ltt.location_id = l.id
+    JOIN public.trip_types t ON t.id = ltt.trip_type_id
+    LEFT JOIN public.categories c ON c.id = l.category_id
+    WHERE l.city_id = ${cityId}
+      AND t.slug = ${tripTypeSlug}
+      AND (
+        l.estimated_time IS NULL OR
+        l.max_cost IS NULL OR
+        l.recommended_for IS NULL OR l.recommended_for = '{}'::text[] OR
+        l.closed_days IS NULL OR l.closed_days = '{}'::text[]
+      )
+    ORDER BY l.updated_at DESC
+    LIMIT ${limit}
+  `;
+    return rows;
+}
+
+async function enrichMissingGeminiForTripType({ cityId, tripTypeSlug, batchSize = 15, limit = 30 }) {
+    const city = await getCityOrThrow(cityId);
+
+    const rows = await getLocationsMissingGeminiForTripType(cityId, tripTypeSlug, limit);
+    console.log("[ensure] missing gemini rows:", rows.length);
+
+    if (!rows.length) return { didEnrich: false, enriched: 0 };
+
+    let enriched = 0;
+
+    // rows are already “missing”, so no need to call getPlacesNeedingGemini here
+    for (const group of chunk(rows, batchSize)) {
+        console.log("[ensure] calling gemini batch:", group.length);
+
+        const out = await geminiEnrich(group, city.name);
+        const results = out?.results || [];
+        const map = new Map(results.map(r => [r.google_place_id, r]));
+
+        for (const p of group) {
+            const r = map.get(p.google_place_id);
+            if (!r) continue;
+            await updateGeminiFields(p.google_place_id, r);
+            enriched += 1;
+        }
+    }
+
+    return { didEnrich: true, enriched };
+}
+
+
 async function getPlacesNeedingGemini(cityId, googlePlaceIds) {
-    // لو أعطيتيني قائمة google_place_id من هالـ run: نفلتر عليها لتقليل
     if (!googlePlaceIds?.length) return new Set();
     const rows = await sql`
     SELECT google_place_id
@@ -99,8 +198,8 @@ async function getPlacesNeedingGemini(cityId, googlePlaceIds) {
       AND (
         estimated_time IS NULL OR
         max_cost IS NULL OR
-        recommended_for IS NULL OR
-        closed_days IS NULL
+        recommended_for IS NULL OR recommended_for = '{}'::text[] OR
+        closed_days IS NULL OR closed_days = '{}'::text[]
       )
   `;
     return new Set(rows.map(r => r.google_place_id));
@@ -172,18 +271,21 @@ async function updateGeminiFields(googlePlaceId, enriched) {
     await sql`
     UPDATE public.locations
     SET
-      estimated_time  = COALESCE(public.locations.estimated_time, ${enriched.estimated_time_minutes}),
-      max_cost        = COALESCE(public.locations.max_cost, ${enriched.max_cost_ils}),
-      recommended_for = COALESCE(public.locations.recommended_for, ${enriched.recommended_for}),
-      closed_days     = COALESCE(public.locations.closed_days, ${enriched.closed_days}),
+      estimated_time = COALESCE(public.locations.estimated_time, ${enriched.estimated_time_minutes}),
+      max_cost = COALESCE(public.locations.max_cost, ${enriched.max_cost_ils}),
+      recommended_for = COALESCE(
+        NULLIF(public.locations.recommended_for, ARRAY[]::text[]),
+        ${enriched.recommended_for}
+      ),
+      closed_days = COALESCE(
+        NULLIF(public.locations.closed_days, ARRAY[]::text[]),
+        ${enriched.closed_days}
+      ),
       updated_at = now()
     WHERE google_place_id = ${googlePlaceId}
   `;
 }
 
-/* =========================
-   Google Places helpers (same as your script)
-   ========================= */
 async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20, radius = 8000 }) {
     const url = "https://places.googleapis.com/v1/places:searchNearby";
     const body = {
@@ -214,9 +316,12 @@ async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20
     return res.json();
 }
 
+
 async function placesGetDetails(placeId) {
     const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
-    const fieldMask = "id,displayName,location,types,primaryType,rating,userRatingCount,regularOpeningHours,photos";
+    // const fieldMask = "id,displayName,location,types,primaryType,rating,userRatingCount,regularOpeningHours,photos";
+    const fieldMask =
+        "id,displayName,location,types,primaryType,rating,userRatingCount,regularOpeningHours,photos,formattedAddress,addressComponents";
 
     const res = await fetch(url, {
         method: "GET",
@@ -233,6 +338,56 @@ async function placesGetDetails(placeId) {
     }
     return res.json();
 }
+
+function normalizeStr(s) {
+    return String(s || "").toLowerCase().trim();
+}
+
+function placeMatchesCity(details, city) {
+    // city: { id, name, ... } من getCityOrThrow
+    const cityName = normalizeStr(city?.name);
+    const cityNameAr = normalizeStr(city?.name_ar);
+    const cityIdLike = normalizeStr(city?.id);
+
+
+    // 1) جرّبي addressComponents (الأدق)
+    const comps = Array.isArray(details?.addressComponents) ? details.addressComponents : [];
+
+    // في Places (New) كل component فيه types + longText/shortText غالبًا.
+    const getText = (c) => normalizeStr(c?.longText || c?.shortText || c?.name);
+
+    // أنواع شائعة لتمثيل المدينة:
+    // locality / administrative_area_level_2 (ممكن تختلف حسب المنطقة)
+    const cityLike = comps
+        .filter(c => Array.isArray(c?.types))
+        .filter(c =>
+            c.types.includes("locality") ||
+            c.types.includes("postal_town") ||
+            c.types.includes("administrative_area_level_2") ||
+            c.types.includes("sublocality") ||
+            c.types.includes("sublocality_level_1")
+        )
+        .map(getText)
+        .filter(Boolean);
+
+    if (cityLike.some(t =>
+        (cityName && (t.includes(cityName) || cityName.includes(t))) ||
+        (cityNameAr && (t.includes(cityNameAr) || cityNameAr.includes(t)))
+    )) return true;
+
+    // fallback formattedAddress
+    const addr = normalizeStr(details?.formattedAddress);
+    if (addr && cityName && addr.includes(cityName)) return true;
+    if (addr && cityNameAr && addr.includes(cityNameAr)) return true;
+    if (addr && cityIdLike && addr.includes(cityIdLike)) return true;
+
+
+
+    return false;
+}
+
+
+
 
 function pickBestCategoryIdForPlace({ placeTypes, primaryType }, categories) {
     for (const c of categories) {
@@ -369,88 +524,130 @@ export async function seedCityOnDemand({
     let totalImported = 0;
     const placesForGemini = [];
 
+    // dedupe across all categories in this run (keep ONLY this one)
+    const seenPlaceIds = new Set();
+
     for (const cat of categories) {
         if (totalImported >= maxTotalPlaces) break;
+
+        const minNeed = Number(cat.min_results_per_city ?? 20);
+        const target = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
 
         const includedTypes = (cat.google_types || []).map(String);
         if (!includedTypes.length) continue;
 
-        const minNeed = Number(cat.min_results_per_city ?? 20);
-        const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
+        const points = jitterPoints(city.center_lat, city.center_lng, radiusMeters, 6);
 
-        const resp = await placesSearchNearby({
-            lat: city.center_lat,
-            lng: city.center_lng,
-            includedTypes,
-            maxResultCount: Math.min(20, maxThisCategory),
-            radius: radiusMeters,
-        });
+        let collectedForCat = 0;
+        let attempts = 0;
+        const maxAttempts = Math.max(12, points.length * 4);
 
-        const places = resp?.places || [];
+        while (collectedForCat < target && totalImported < maxTotalPlaces && attempts < maxAttempts) {
+            const pt = points[attempts % points.length];
 
-        for (const p of places) {
-            if (totalImported >= maxTotalPlaces) break;
+            const radiusCap = Math.max(8000, Math.min(radiusMeters + 3000, 9000));
+            const radiusNow = Math.min(radiusMeters + attempts * 500, radiusCap);
 
-            const placeId = p.id;
-            if (!placeId) continue;
 
-            const d = await placesGetDetails(placeId);
-
-            const name = d?.displayName?.text || p?.displayName?.text || null;
-            const lat = d?.location?.latitude ?? p?.location?.latitude ?? null;
-            const lng = d?.location?.longitude ?? p?.location?.longitude ?? null;
-
-            const rating = d?.rating ?? p?.rating ?? null;
-            const userRatingsTotal = d?.userRatingCount ?? p?.userRatingCount ?? null;
-
-            const primaryType = d?.primaryType ?? p?.primaryType ?? null;
-            const types = d?.types ?? p?.types ?? [];
-
-            const bestCategoryId =
-                pickBestCategoryIdForPlace({ placeTypes: types, primaryType }, categories) || cat.id;
-
-            const openHours = d?.regularOpeningHours ?? null;
-
-            const locationId = await upsertLocation({
-                city_id: city.id,
-                category_id: bestCategoryId,
-                name,
-                google_place_id: placeId,
-                lat,
-                lng,
-                rating,
-                user_ratings_total: userRatingsTotal,
-                open_hours: openHours ? JSON.stringify(openHours) : null,
+            const resp = await placesSearchNearby({
+                lat: pt.lat,
+                lng: pt.lng,
+                includedTypes,
+                maxResultCount: 20,
+                radius: radiusNow,
             });
 
-            const firstPhotoName = d?.photos?.[0]?.name || p?.photos?.[0]?.name || null;
-            await upsertPrimaryPhoto(locationId, firstPhotoName);
+            const places = resp?.places || [];
+            if (!places.length) {
+                attempts++;
+                continue;
+            }
 
-            const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
-            const categorySlug = categorySlugRow?.slug || cat.slug;
+            for (const p of places) {
+                if (collectedForCat >= target) break;
+                if (totalImported >= maxTotalPlaces) break;
 
-            await linkTripTypesByRules(locationId, categorySlug);
+                const placeId = p.id;
+                if (!placeId) continue;
 
-            placesForGemini.push({
-                google_place_id: placeId,
-                name,
-                category_slug: categorySlug,
-                rating,
-                user_ratings_total: userRatingsTotal,
-            });
+                // ✅ dedupe across ALL categories + attempts
+                if (seenPlaceIds.has(placeId)) continue;
+                seenPlaceIds.add(placeId);
 
-            totalImported += 1;
+                const d = await placesGetDetails(placeId);
+
+                // ✅ city filter (Ramallah only-ish)
+                if (!placeMatchesCity(d, city)) continue;
+
+                const name = d?.displayName?.text || p?.displayName?.text || null;
+                const lat = d?.location?.latitude ?? p?.location?.latitude ?? null;
+                const lng = d?.location?.longitude ?? p?.location?.longitude ?? null;
+
+                const rating = d?.rating ?? p?.rating ?? null;
+                const userRatingsTotal = d?.userRatingCount ?? p?.userRatingCount ?? null;
+
+                const primaryType = d?.primaryType ?? p?.primaryType ?? null;
+                const types = d?.types ?? p?.types ?? [];
+
+                const bestCategoryId =
+                    pickBestCategoryIdForPlace({ placeTypes: types, primaryType }, categories) || cat.id;
+
+                const openHours = d?.regularOpeningHours ?? null;
+
+                const locationId = await upsertLocation({
+                    city_id: city.id,
+                    category_id: bestCategoryId,
+                    name,
+                    google_place_id: placeId,
+                    lat,
+                    lng,
+                    rating,
+                    user_ratings_total: userRatingsTotal,
+                    open_hours: openHours ? JSON.stringify(openHours) : null,
+                });
+
+                const firstPhotoName = d?.photos?.[0]?.name || p?.photos?.[0]?.name || null;
+                await upsertPrimaryPhoto(locationId, firstPhotoName);
+
+                const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
+                const categorySlug = categorySlugRow?.slug || cat.slug;
+
+                await linkTripTypesByRules(locationId, categorySlug);
+
+                placesForGemini.push({
+                    google_place_id: placeId,
+                    name,
+                    category_slug: categorySlug,
+                    rating,
+                    user_ratings_total: userRatingsTotal,
+                });
+
+                totalImported += 1;
+                collectedForCat += 1;
+            }
+
+            attempts++;
         }
     }
 
+    console.log("[seed] imported candidates:", placesForGemini.length);
+
     // Gemini only for ones needing it
     const googleIds = placesForGemini.map(p => p.google_place_id);
+    console.log("[seed] placesForGemini:", placesForGemini.length);
+    console.log("[seed] googleIds sample:", googleIds.slice(0, 3));
+
     const needSet = await getPlacesNeedingGemini(city.id, googleIds);
+    console.log("[seed] needSet size:", needSet.size);
+
     const filteredForGemini = placesForGemini.filter(p => needSet.has(p.google_place_id));
+    console.log("[seed] need gemini:", filteredForGemini.length);
 
     let geminiEnriched = 0;
     for (const group of chunk(filteredForGemini, batchSize)) {
+        console.log("[seed] calling gemini, batch size:", group.length);
         const out = await geminiEnrich(group, city.name);
+        console.log("[seed] gemini returned results:", out?.results?.length ?? 0);
         const results = out?.results || [];
         const map = new Map(results.map((r) => [r.google_place_id, r]));
 
@@ -465,9 +662,31 @@ export async function seedCityOnDemand({
     return { imported: totalImported, geminiEnriched, categories: slugs };
 }
 
-/* =========================
-   Public API: ensure (called by controller)
-   ========================= */
+async function getLocationsMissingGeminiForCityTripType(cityId, tripTypeSlug, limit = 60) {
+    return await sql`
+    SELECT
+      l.google_place_id,
+      l.name,
+      c.slug AS category_slug,
+      l.rating,
+      l.user_ratings_total
+    FROM public.locations l
+    JOIN public.location_trip_types ltt ON ltt.location_id = l.id
+    JOIN public.trip_types t ON t.id = ltt.trip_type_id
+    JOIN public.categories c ON c.id = l.category_id
+    WHERE l.city_id = ${cityId}
+      AND t.slug = ${tripTypeSlug}
+      AND (
+        l.estimated_time IS NULL OR
+        l.max_cost IS NULL OR
+        l.recommended_for IS NULL OR l.recommended_for = '{}'::text[] OR
+        l.closed_days IS NULL OR l.closed_days = '{}'::text[]
+      )
+    ORDER BY l.updated_at DESC
+    LIMIT ${limit}
+  `;
+}
+
 export async function ensureLocationsForTripType({
     cityId,
     tripTypeSlug,
@@ -475,39 +694,67 @@ export async function ensureLocationsForTripType({
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
-    if (!cityId || !tripTypeSlug) return { didSeed: false, reason: "missing params" };
+    if (!cityId || !tripTypeSlug) return { didSeed: false, didEnrich: false, reason: "missing params" };
 
     const safeTripType = String(tripTypeSlug).toLowerCase().trim();
+
+    // 1) نحاول نفهم required categories من rules (لـ seed)
     const required = await getRuleCategoriesByTripTypeSlug(safeTripType);
-    if (!required.length) return { didSeed: false, reason: "no required_category_slugs" };
 
-    const missing = await getMissingCategorySlugsForCity(cityId, required);
-    if (!missing.length) return { didSeed: false, reason: "already sufficient" };
+    let missing = [];
+    let seedReason = null;
 
-    // ---------------------------
-    // Advisory lock (prevents parallel seeds for same city+tripType)
-    // ---------------------------
+    if (!required.length) {
+        // لا نقدر نقرر seed حسب rules، لكن ما زال ممكن نعمل enrichment للأماكن الموجودة
+        seedReason = "no required_category_slugs in rules";
+    } else {
+        missing = await getMissingCategorySlugsForCity(cityId, required);
+        if (!missing.length) seedReason = "already sufficient (counts)";
+    }
+
+    // 2) Advisory lock لمنع parallel
     const lockKey = `${cityId}:${safeTripType}`;
     const lockRows = await sql`SELECT pg_try_advisory_lock(hashtext(${lockKey})) AS ok`;
     const ok = Boolean(lockRows?.[0]?.ok);
 
     if (!ok) {
-        return { didSeed: false, reason: "locked", missing };
+        return { didSeed: false, didEnrich: false, reason: "locked", missing };
     }
 
     try {
-        const stats = await seedCityOnDemand({
+        let seedStats = null;
+        let didSeed = false;
+
+        // 3) seed فقط إذا عندنا missing categories
+        if (missing.length) {
+            seedStats = await seedCityOnDemand({
+                cityId,
+                tripTypeSlug: safeTripType,
+                categoriesSlugs: missing,
+                radiusMeters,
+                maxTotalPlaces,
+                batchSize,
+            });
+            didSeed = true;
+        }
+
+        // 4) ✅ ALWAYS: Gemini backfill للأماكن الموجودة والناقصة (حتى لو didSeed=false)
+        // limit صغير لتجنب تعليق request؛ للتنظيف مرة واحدة شغّلي script وارفع limit.
+        const enrichStats = await enrichMissingGeminiForTripType({
             cityId,
             tripTypeSlug: safeTripType,
-            categoriesSlugs: missing,
-            radiusMeters,
-            maxTotalPlaces,
             batchSize,
+            limit: 30,
         });
 
-        return { didSeed: true, missing, stats };
+        return {
+            didSeed,
+            seedReason,
+            missing,
+            seedStats,
+            ...enrichStats,
+        };
     } finally {
-        // Ensure unlock even if seed fails
         await sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`;
     }
 }
