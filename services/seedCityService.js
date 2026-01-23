@@ -99,8 +99,8 @@ async function getPlacesNeedingGemini(cityId, googlePlaceIds) {
       AND (
         estimated_time IS NULL OR
         max_cost IS NULL OR
-        recommended_for IS NULL OR
-        closed_days IS NULL
+        recommended_for IS NULL OR cardinality(recommended_for) = 0 OR
+      closed_days IS NULL OR cardinality(closed_days) = 0
       )
   `;
     return new Set(rows.map(r => r.google_place_id));
@@ -169,13 +169,16 @@ async function linkTripTypesByRules(locationId, categorySlug) {
 }
 
 async function updateGeminiFields(googlePlaceId, enriched) {
+    const rec = Array.isArray(enriched.recommended_for) ? enriched.recommended_for : [];
+    const closed = Array.isArray(enriched.closed_days) ? enriched.closed_days : [];
+
     await sql`
     UPDATE public.locations
     SET
       estimated_time  = COALESCE(public.locations.estimated_time, ${enriched.estimated_time_minutes}),
       max_cost        = COALESCE(public.locations.max_cost, ${enriched.max_cost_ils}),
-      recommended_for = COALESCE(public.locations.recommended_for, ${enriched.recommended_for}),
-      closed_days     = COALESCE(public.locations.closed_days, ${enriched.closed_days}),
+      recommended_for = COALESCE(public.locations.recommended_for, ${rec}::text[]),
+      closed_days     = COALESCE(public.locations.closed_days, ${closed}::text[]),
       updated_at = now()
     WHERE google_place_id = ${googlePlaceId}
   `;
@@ -448,6 +451,11 @@ export async function seedCityOnDemand({
     const needSet = await getPlacesNeedingGemini(city.id, googleIds);
     const filteredForGemini = placesForGemini.filter(p => needSet.has(p.google_place_id));
 
+    console.log("placesForGemini:", placesForGemini.length);
+    console.log("needSet:", needSet.size);
+    console.log("filteredForGemini:", filteredForGemini.length);
+
+
     let geminiEnriched = 0;
     for (const group of chunk(filteredForGemini, batchSize)) {
         const out = await geminiEnrich(group, city.name);
@@ -478,7 +486,7 @@ export async function ensureLocationsForTripType({
     if (!cityId || !tripTypeSlug) return { didSeed: false, reason: "missing params" };
 
     const safeTripType = String(tripTypeSlug).toLowerCase().trim();
-    const required = await getRuleCategoriesByTripTypeSlug(tripTypeSlug);
+    const required = await getRuleCategoriesByTripTypeSlug(safeTripType);
     if (!required.length) return { didSeed: false, reason: "no required_category_slugs" };
 
     const missing = await getMissingCategorySlugsForCity(cityId, required);
