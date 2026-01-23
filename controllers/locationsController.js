@@ -128,7 +128,7 @@ export async function getLocations(req, res) {
             stack: error?.stack,
         });
         return res.status(500).json({
-            message: "Internal server error" 
+            message: "Internal server error",
             debug: error?.message || String(error),
         });
     }
