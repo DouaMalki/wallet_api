@@ -133,4 +133,28 @@ export async function deleteUser(req, res) {
   }
 }
 
+export async function updateProfileImage(req, res) {
+  const { profile_image } = req.body;
+  const userId = req.userId; // ✅ from requireAuth
+
+  if (!profile_image) {
+    return res.status(400).json({ message: "profile_image is required" });
+  }
+
+  try {
+    const rows = await sql`
+      UPDATE users
+      SET profile_image = ${profile_image}
+      WHERE user_id = ${userId}
+      RETURNING user_id, profile_image
+    `;
+
+    return res.json(rows[0]);
+  } catch (err) {
+    console.error("updateProfileImage error:", err);
+    return res.status(500).json({ message: "Failed to update profile image" });
+  }
+}
+
+
 
