@@ -34,6 +34,11 @@ app.get("/api/health", (req, res) => {
 
 console.log("UPSTASH URL set?", !!process.env.UPSTASH_REDIS_REST_URL);
 console.log("UPSTASH TOKEN set?", !!process.env.UPSTASH_REDIS_REST_TOKEN);
+console.log("HTTP_PROXY:", process.env.HTTP_PROXY || null);
+console.log("HTTPS_PROXY:", process.env.HTTPS_PROXY || null);
+console.log("ALL_PROXY:", process.env.ALL_PROXY || null);
+console.log("NO_PROXY:", process.env.NO_PROXY || null);
+
 
 
 // routers created by doua
