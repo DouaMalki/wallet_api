@@ -1,9 +1,9 @@
 const dow = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
-function toHHMM(h, m) {
-    const hh = String(h ?? 0).padStart(2, "0");
-    const mm = String(m ?? 0).padStart(2, "0");
-    return `${hh}:${mm}`;
+function toHHMM(hour = 0, minute = 0) {
+    const h = String(hour ?? 0).padStart(2, "0");
+    const m = String(minute ?? 0).padStart(2, "0");
+    return `${h}:${m}`;
 }
 
 function mapGoogleOpeningToSimple(openHoursJson) {
@@ -32,11 +32,6 @@ function mapGoogleOpeningToSimple(openHoursJson) {
     return Object.keys(out).length ? out : null;
 }
 
-function toHHMM(hour = 0, minute = 0) {
-    const h = String(hour).padStart(2, "0");
-    const m = String(minute).padStart(2, "0");
-    return `${h}:${m}`;
-}
 
 function normalizeOpenHours(googleRegularOpeningHours) {
     if (!googleRegularOpeningHours) return null;
@@ -118,7 +113,7 @@ function normalizeOpenHours(googleRegularOpeningHours) {
 
 
 export function mapLocationRow(row) {
-    const ref = row.cover_photo_reference || null;
+
 
     // مهم: base URL من env عشان يشتغل محلياً وعلى Render
     const base =
@@ -133,7 +128,6 @@ export function mapLocationRow(row) {
             ? `${base}/api/photos?ref=${encodeURIComponent(coverPhotoReference)}&maxWidth=800`
             : null;
 
-    const simpleOpen = mapGoogleOpeningToSimple(row.open_hours);
 
     return {
         id: row.id,
