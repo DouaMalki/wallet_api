@@ -1,7 +1,7 @@
 import express from "express";
 import "dotenv/config";
 import { initDB } from "./config/db.js";
-import rateLimiter from "./middleware/rateLimiter.js";
+//import rateLimiter from "./middleware/rateLimiter.js";
 import job from "./config/cron.js";
 // routers that will be used by the express app
 import reportsRouter from "./routers/reportsRouter.js";
@@ -25,7 +25,7 @@ const app = express();
 if (process.env.NODE_ENV === "production") job.start();
 
 // middleware
-app.use(rateLimiter);
+//app.use(rateLimiter);
 app.use(express.json());
 
 app.get("/api/health", (req, res) => {
