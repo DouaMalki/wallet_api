@@ -5,15 +5,13 @@ export async function getLocations(req, res) {
     try {
         const { cityId, tripType, limit, offset } = req.query;
 
-        // limit اختياري:
-        // - إذا المستخدم ما بعته => null (يعني بدون LIMIT)
-        // - إذا بعته => رقم
+
         const parsedLimit =
             limit === undefined || limit === null || limit === ""
                 ? null
                 : Number(limit);
 
-        // لو بعث قيمة غلط (NaN أو <=0) اعتبريه بدون limit
+
         const safeLimit =
             Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
 
@@ -30,14 +28,17 @@ export async function getLocations(req, res) {
 
         // ✅ هنا الربط: ensure قبل ما نرجّع locations
         if (cityId && safeTripType) {
-            // مبدئياً synchronous
-            await ensureLocationsForTripType({
+            console.log("[api/locations] ensure start", { cityId, safeTripType });
+
+            const out = await ensureLocationsForTripType({
                 cityId,
                 tripTypeSlug: safeTripType,
                 radiusMeters: 8000,
                 maxTotalPlaces: 220,
                 batchSize: 15,
             });
+
+            console.log("[api/locations] ensure result", out);
         }
 
         const rows = await listLocations({

@@ -130,6 +130,64 @@ async function getMissingCategorySlugsForCity(cityId, requiredSlugs) {
     return missing;
 }
 
+
+
+async function getLocationsMissingGeminiForTripType(cityId, tripTypeSlug, limit = 30) {
+    const rows = await sql`
+    SELECT
+      l.google_place_id,
+      l.name,
+      c.slug AS category_slug,
+      l.rating,
+      l.user_ratings_total
+    FROM public.locations l
+    JOIN public.location_trip_types ltt ON ltt.location_id = l.id
+    JOIN public.trip_types t ON t.id = ltt.trip_type_id
+    LEFT JOIN public.categories c ON c.id = l.category_id
+    WHERE l.city_id = ${cityId}
+      AND t.slug = ${tripTypeSlug}
+      AND (
+        l.estimated_time IS NULL OR
+        l.max_cost IS NULL OR
+        l.recommended_for IS NULL OR l.recommended_for = '{}'::text[] OR
+        l.closed_days IS NULL OR l.closed_days = '{}'::text[]
+      )
+    ORDER BY l.updated_at DESC
+    LIMIT ${limit}
+  `;
+    return rows;
+}
+
+async function enrichMissingGeminiForTripType({ cityId, tripTypeSlug, batchSize = 15, limit = 30 }) {
+    const city = await getCityOrThrow(cityId);
+
+    const rows = await getLocationsMissingGeminiForTripType(cityId, tripTypeSlug, limit);
+    console.log("[ensure] missing gemini rows:", rows.length);
+
+    if (!rows.length) return { didEnrich: false, enriched: 0 };
+
+    let enriched = 0;
+
+    // rows are already “missing”, so no need to call getPlacesNeedingGemini here
+    for (const group of chunk(rows, batchSize)) {
+        console.log("[ensure] calling gemini batch:", group.length);
+
+        const out = await geminiEnrich(group, city.name);
+        const results = out?.results || [];
+        const map = new Map(results.map(r => [r.google_place_id, r]));
+
+        for (const p of group) {
+            const r = map.get(p.google_place_id);
+            if (!r) continue;
+            await updateGeminiFields(p.google_place_id, r);
+            enriched += 1;
+        }
+    }
+
+    return { didEnrich: true, enriched };
+}
+
+
 async function getPlacesNeedingGemini(cityId, googlePlaceIds) {
     if (!googlePlaceIds?.length) return new Set();
     const rows = await sql`
@@ -228,9 +286,6 @@ async function updateGeminiFields(googlePlaceId, enriched) {
   `;
 }
 
-/* =========================
-   Google Places helpers (same as your script)
-   ========================= */
 async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20, radius = 8000 }) {
     const url = "https://places.googleapis.com/v1/places:searchNearby";
     const body = {
@@ -579,9 +634,13 @@ export async function seedCityOnDemand({
 
     // Gemini only for ones needing it
     const googleIds = placesForGemini.map(p => p.google_place_id);
-    const needSet = await getPlacesNeedingGemini(city.id, googleIds);
-    const filteredForGemini = placesForGemini.filter(p => needSet.has(p.google_place_id));
+    console.log("[seed] placesForGemini:", placesForGemini.length);
+    console.log("[seed] googleIds sample:", googleIds.slice(0, 3));
 
+    const needSet = await getPlacesNeedingGemini(city.id, googleIds);
+    console.log("[seed] needSet size:", needSet.size);
+
+    const filteredForGemini = placesForGemini.filter(p => needSet.has(p.google_place_id));
     console.log("[seed] need gemini:", filteredForGemini.length);
 
     let geminiEnriched = 0;
@@ -603,9 +662,31 @@ export async function seedCityOnDemand({
     return { imported: totalImported, geminiEnriched, categories: slugs };
 }
 
-/* =========================
-   Public API: ensure (called by controller)
-   ========================= */
+async function getLocationsMissingGeminiForCityTripType(cityId, tripTypeSlug, limit = 60) {
+    return await sql`
+    SELECT
+      l.google_place_id,
+      l.name,
+      c.slug AS category_slug,
+      l.rating,
+      l.user_ratings_total
+    FROM public.locations l
+    JOIN public.location_trip_types ltt ON ltt.location_id = l.id
+    JOIN public.trip_types t ON t.id = ltt.trip_type_id
+    JOIN public.categories c ON c.id = l.category_id
+    WHERE l.city_id = ${cityId}
+      AND t.slug = ${tripTypeSlug}
+      AND (
+        l.estimated_time IS NULL OR
+        l.max_cost IS NULL OR
+        l.recommended_for IS NULL OR l.recommended_for = '{}'::text[] OR
+        l.closed_days IS NULL OR l.closed_days = '{}'::text[]
+      )
+    ORDER BY l.updated_at DESC
+    LIMIT ${limit}
+  `;
+}
+
 export async function ensureLocationsForTripType({
     cityId,
     tripTypeSlug,
@@ -613,45 +694,68 @@ export async function ensureLocationsForTripType({
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
-    if (!cityId || !tripTypeSlug) return { didSeed: false, reason: "missing params" };
+    if (!cityId || !tripTypeSlug) return { didSeed: false, didEnrich: false, reason: "missing params" };
 
     const safeTripType = String(tripTypeSlug).toLowerCase().trim();
+
+    // 1) نحاول نفهم required categories من rules (لـ seed)
     const required = await getRuleCategoriesByTripTypeSlug(safeTripType);
 
-    if (!required.length) return { didSeed: false, reason: "no required_category_slugs" };
+    let missing = [];
+    let seedReason = null;
 
-    const missing = await getMissingCategorySlugsForCity(cityId, required);
-    if (!missing.length) return { didSeed: false, reason: "already sufficient" };
+    if (!required.length) {
+        // لا نقدر نقرر seed حسب rules، لكن ما زال ممكن نعمل enrichment للأماكن الموجودة
+        seedReason = "no required_category_slugs in rules";
+    } else {
+        missing = await getMissingCategorySlugsForCity(cityId, required);
+        if (!missing.length) seedReason = "already sufficient (counts)";
+    }
 
-
-    // ---------------------------
-    // Advisory lock (prevents parallel seeds for same city+tripType)
-    // ---------------------------
+    // 2) Advisory lock لمنع parallel
     const lockKey = `${cityId}:${safeTripType}`;
     const lockRows = await sql`SELECT pg_try_advisory_lock(hashtext(${lockKey})) AS ok`;
     const ok = Boolean(lockRows?.[0]?.ok);
 
     if (!ok) {
-        return { didSeed: false, reason: "locked", missing };
+        return { didSeed: false, didEnrich: false, reason: "locked", missing };
     }
 
-    // OPTIONAL: prevent parallel seeds for same city+tripType using advisory lock
-    // If you want: SELECT pg_try_advisory_lock(hashtext(...))
-    // For now: do seed directly
-
     try {
-        const stats = await seedCityOnDemand({
+        let seedStats = null;
+        let didSeed = false;
+
+        // 3) seed فقط إذا عندنا missing categories
+        if (missing.length) {
+            seedStats = await seedCityOnDemand({
+                cityId,
+                tripTypeSlug: safeTripType,
+                categoriesSlugs: missing,
+                radiusMeters,
+                maxTotalPlaces,
+                batchSize,
+            });
+            didSeed = true;
+        }
+
+        // 4) ✅ ALWAYS: Gemini backfill للأماكن الموجودة والناقصة (حتى لو didSeed=false)
+        // limit صغير لتجنب تعليق request؛ للتنظيف مرة واحدة شغّلي script وارفع limit.
+        const enrichStats = await enrichMissingGeminiForTripType({
             cityId,
             tripTypeSlug: safeTripType,
-            categoriesSlugs: missing,
-            radiusMeters,
-            maxTotalPlaces,
             batchSize,
+            limit: 30,
         });
 
-        return { didSeed: true, missing, stats };
+        return {
+            didSeed,
+            seedReason,
+            missing,
+            seedStats,
+            ...enrichStats,
+        };
     } finally {
-        // Ensure unlock even if seed fails
         await sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`;
     }
 }
+
