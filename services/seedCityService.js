@@ -381,6 +381,8 @@ export async function seedCityOnDemand({
         const minNeed = Number(cat.min_results_per_city ?? 20);
         const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
 
+        console.log("CATEGORY:", cat.slug, "includedTypes:", includedTypes);
+
         const resp = await placesSearchNearby({
             lat: city.center_lat,
             lng: city.center_lng,
