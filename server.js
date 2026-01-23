@@ -27,6 +27,11 @@ if (process.env.NODE_ENV === "production") job.start();
 // middleware
 //app.use(rateLimiter);
 app.use(express.json());
+app.use((req, res, next) => {
+  console.log("REQ:", req.method, req.originalUrl);
+  next();
+});
+
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok" });
@@ -64,7 +69,15 @@ app.use("/api/categories", categoriesRouter);
 app.use("/api/photos", photosRouter);
 app.use("/api/saved_trip_plans", saveTripPlanRouter);
 
-
+app.use((err, req, res, next) => {
+  console.error("GLOBAL ERROR:", {
+    url: req.originalUrl,
+    method: req.method,
+    message: err?.message,
+    stack: err?.stack,
+  });
+  res.status(500).json({ message: "Internal server error", debug: err?.message });
+});
 
 
 
@@ -75,3 +88,5 @@ initDB().then(() => {
     console.log("Server is up and running on PORT:", PORT);
   });
 });
+
+

@@ -127,7 +127,10 @@ export async function getLocations(req, res) {
             where: error?.where,
             stack: error?.stack,
         });
-        return res.status(500).json({ message: "Internal server error" });
+        return res.status(500).json({
+            message: "Internal server error" 
+            debug: error?.message || String(error),
+        });
     }
 }
 // /api/locations?cityId=ramallah → يرجّع كل رام الله
