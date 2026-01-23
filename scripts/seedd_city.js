@@ -37,11 +37,7 @@ async function main() {
         process.exit(1);
     }
 
-    // modes:
-    // - on_demand: seed based on categories OR trip_type
-    // - ensure: checks missing categories for trip_type then seeds only missing
-    // - seed: (optional) if you still want it, you can call seedCityOnDemand with "seed default categories"
-    //         but I recommend keeping "seed" as separate script if needed.
+
     if (mode === "ensure") {
         if (!tripTypeSlug) {
             throw new Error("mode=ensure requires --trip_type=...");
@@ -78,8 +74,7 @@ async function main() {
     }
 
     if (mode === "seed") {
-        // If you still need "seed default categories" from DB, implement it inside service later.
-        // For now, keep it explicit to avoid silent surprises.
+
         throw new Error(
             "mode=seed is not supported in the wrapper yet. Use on_demand with --categories=... or use ensure."
         );
@@ -93,4 +88,5 @@ main().catch((e) => {
     if (e?.stack) console.error(e.stack);
     process.exit(1);
 });
+
 

@@ -478,11 +478,12 @@ export async function ensureLocationsForTripType({
     if (!cityId || !tripTypeSlug) return { didSeed: false, reason: "missing params" };
 
     const safeTripType = String(tripTypeSlug).toLowerCase().trim();
-    const required = await getRuleCategoriesByTripTypeSlug(safeTripType);
+    const required = await getRuleCategoriesByTripTypeSlug(tripTypeSlug);
     if (!required.length) return { didSeed: false, reason: "no required_category_slugs" };
 
     const missing = await getMissingCategorySlugsForCity(cityId, required);
     if (!missing.length) return { didSeed: false, reason: "already sufficient" };
+
 
     // ---------------------------
     // Advisory lock (prevents parallel seeds for same city+tripType)
@@ -494,6 +495,10 @@ export async function ensureLocationsForTripType({
     if (!ok) {
         return { didSeed: false, reason: "locked", missing };
     }
+
+    // OPTIONAL: prevent parallel seeds for same city+tripType using advisory lock
+    // If you want: SELECT pg_try_advisory_lock(hashtext(...))
+    // For now: do seed directly
 
     try {
         const stats = await seedCityOnDemand({
@@ -511,4 +516,3 @@ export async function ensureLocationsForTripType({
         await sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`;
     }
 }
-
