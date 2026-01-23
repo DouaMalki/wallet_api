@@ -25,7 +25,7 @@ function sleep(ms) {
    ========================= */
 async function getCityOrThrow(cityId) {
     const rows = await sql`
-    SELECT id, name, center_lat, center_lng
+    SELECT id, name, name_ar, center_lat, center_lng
     FROM public.cities
     WHERE id = ${cityId}
     LIMIT 1
@@ -33,6 +33,7 @@ async function getCityOrThrow(cityId) {
     if (!rows?.length) throw new Error(`City not found: ${cityId}`);
     return rows[0];
 }
+
 
 async function getRuleCategoriesByTripTypeSlug(tripTypeSlug) {
     const rows = await sql`
@@ -43,9 +44,8 @@ async function getRuleCategoriesByTripTypeSlug(tripTypeSlug) {
       AND t.slug = ${tripTypeSlug}
     LIMIT 1
   `;
-    // const rule = rows?.[0]?.rule_json;
-    // const slugs = rule?.required_category_slugs || [];
-    // return Array.isArray(slugs) ? slugs.map(s => String(s).toLowerCase().trim()).filter(Boolean) : [];
+
+    const rule = rows?.[0]?.rule_json || {};
 
     // (1) required_category_slugs
     const required = Array.isArray(rule?.required_category_slugs)
@@ -66,8 +66,8 @@ async function getRuleCategoriesByTripTypeSlug(tripTypeSlug) {
     );
 
     return [...set];
-
 }
+
 
 async function getCategoriesBySlugs(slugs) {
     if (!slugs?.length) return [];
@@ -79,6 +79,27 @@ async function getCategoriesBySlugs(slugs) {
   `;
     return rows;
 }
+
+function metersToLat(m) { return m / 111320; } // تقريب
+function metersToLng(m, lat) { return m / (111320 * Math.cos((lat * Math.PI) / 180)); }
+
+function jitterPoints(centerLat, centerLng, radiusMeters, count = 6) {
+    // نقاط حول المركز (شكل دائرة)
+    const pts = [{ lat: centerLat, lng: centerLng }];
+    const step = (2 * Math.PI) / count;
+    const r = Math.max(800, Math.min(radiusMeters * 0.6, 3000)); // توازن
+    for (let i = 0; i < count; i++) {
+        const ang = i * step;
+        const dx = Math.cos(ang) * r;
+        const dy = Math.sin(ang) * r;
+        pts.push({
+            lat: centerLat + metersToLat(dy),
+            lng: centerLng + metersToLng(dx, centerLat),
+        });
+    }
+    return pts;
+}
+
 
 /**
  * Returns missing category slugs for given city.
@@ -235,9 +256,12 @@ async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20
     return res.json();
 }
 
+
 async function placesGetDetails(placeId) {
     const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
-    const fieldMask = "id,displayName,location,types,primaryType,rating,userRatingCount,regularOpeningHours,photos";
+    // const fieldMask = "id,displayName,location,types,primaryType,rating,userRatingCount,regularOpeningHours,photos";
+    const fieldMask =
+        "id,displayName,location,types,primaryType,rating,userRatingCount,regularOpeningHours,photos,formattedAddress,addressComponents";
 
     const res = await fetch(url, {
         method: "GET",
@@ -254,6 +278,56 @@ async function placesGetDetails(placeId) {
     }
     return res.json();
 }
+
+function normalizeStr(s) {
+    return String(s || "").toLowerCase().trim();
+}
+
+function placeMatchesCity(details, city) {
+    // city: { id, name, ... } من getCityOrThrow
+    const cityName = normalizeStr(city?.name);
+    const cityNameAr = normalizeStr(city?.name_ar);
+    const cityIdLike = normalizeStr(city?.id);
+
+
+    // 1) جرّبي addressComponents (الأدق)
+    const comps = Array.isArray(details?.addressComponents) ? details.addressComponents : [];
+
+    // في Places (New) كل component فيه types + longText/shortText غالبًا.
+    const getText = (c) => normalizeStr(c?.longText || c?.shortText || c?.name);
+
+    // أنواع شائعة لتمثيل المدينة:
+    // locality / administrative_area_level_2 (ممكن تختلف حسب المنطقة)
+    const cityLike = comps
+        .filter(c => Array.isArray(c?.types))
+        .filter(c =>
+            c.types.includes("locality") ||
+            c.types.includes("postal_town") ||
+            c.types.includes("administrative_area_level_2") ||
+            c.types.includes("sublocality") ||
+            c.types.includes("sublocality_level_1")
+        )
+        .map(getText)
+        .filter(Boolean);
+
+    if (cityLike.some(t =>
+        (cityName && (t.includes(cityName) || cityName.includes(t))) ||
+        (cityNameAr && (t.includes(cityNameAr) || cityNameAr.includes(t)))
+    )) return true;
+
+    // fallback formattedAddress
+    const addr = normalizeStr(details?.formattedAddress);
+    if (addr && cityName && addr.includes(cityName)) return true;
+    if (addr && cityNameAr && addr.includes(cityNameAr)) return true;
+    if (addr && cityIdLike && addr.includes(cityIdLike)) return true;
+
+
+
+    return false;
+}
+
+
+
 
 function pickBestCategoryIdForPlace({ placeTypes, primaryType }, categories) {
     for (const c of categories) {
@@ -390,79 +464,112 @@ export async function seedCityOnDemand({
     let totalImported = 0;
     const placesForGemini = [];
 
+    // dedupe across all categories in this run (keep ONLY this one)
+    const seenPlaceIds = new Set();
+
     for (const cat of categories) {
         if (totalImported >= maxTotalPlaces) break;
+
+        const minNeed = Number(cat.min_results_per_city ?? 20);
+        const target = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
 
         const includedTypes = (cat.google_types || []).map(String);
         if (!includedTypes.length) continue;
 
-        const minNeed = Number(cat.min_results_per_city ?? 20);
-        const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
+        const points = jitterPoints(city.center_lat, city.center_lng, radiusMeters, 6);
 
-        const resp = await placesSearchNearby({
-            lat: city.center_lat,
-            lng: city.center_lng,
-            includedTypes,
-            maxResultCount: Math.min(20, maxThisCategory),
-            radius: radiusMeters,
-        });
+        let collectedForCat = 0;
+        let attempts = 0;
+        const maxAttempts = Math.max(12, points.length * 4);
 
-        const places = resp?.places || [];
+        while (collectedForCat < target && totalImported < maxTotalPlaces && attempts < maxAttempts) {
+            const pt = points[attempts % points.length];
 
-        for (const p of places) {
-            if (totalImported >= maxTotalPlaces) break;
+            const radiusCap = Math.max(8000, Math.min(radiusMeters + 3000, 9000));
+            const radiusNow = Math.min(radiusMeters + attempts * 500, radiusCap);
 
-            const placeId = p.id;
-            if (!placeId) continue;
 
-            const d = await placesGetDetails(placeId);
-
-            const name = d?.displayName?.text || p?.displayName?.text || null;
-            const lat = d?.location?.latitude ?? p?.location?.latitude ?? null;
-            const lng = d?.location?.longitude ?? p?.location?.longitude ?? null;
-
-            const rating = d?.rating ?? p?.rating ?? null;
-            const userRatingsTotal = d?.userRatingCount ?? p?.userRatingCount ?? null;
-
-            const primaryType = d?.primaryType ?? p?.primaryType ?? null;
-            const types = d?.types ?? p?.types ?? [];
-
-            const bestCategoryId =
-                pickBestCategoryIdForPlace({ placeTypes: types, primaryType }, categories) || cat.id;
-
-            const openHours = d?.regularOpeningHours ?? null;
-
-            const locationId = await upsertLocation({
-                city_id: city.id,
-                category_id: bestCategoryId,
-                name,
-                google_place_id: placeId,
-                lat,
-                lng,
-                rating,
-                user_ratings_total: userRatingsTotal,
-                open_hours: openHours ? JSON.stringify(openHours) : null,
+            const resp = await placesSearchNearby({
+                lat: pt.lat,
+                lng: pt.lng,
+                includedTypes,
+                maxResultCount: 20,
+                radius: radiusNow,
             });
 
-            const firstPhotoName = d?.photos?.[0]?.name || p?.photos?.[0]?.name || null;
-            await upsertPrimaryPhoto(locationId, firstPhotoName);
+            const places = resp?.places || [];
+            if (!places.length) {
+                attempts++;
+                continue;
+            }
 
-            const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
-            const categorySlug = categorySlugRow?.slug || cat.slug;
+            for (const p of places) {
+                if (collectedForCat >= target) break;
+                if (totalImported >= maxTotalPlaces) break;
 
-            await linkTripTypesByRules(locationId, categorySlug);
+                const placeId = p.id;
+                if (!placeId) continue;
 
-            placesForGemini.push({
-                google_place_id: placeId,
-                name,
-                category_slug: categorySlug,
-                rating,
-                user_ratings_total: userRatingsTotal,
-            });
+                // ✅ dedupe across ALL categories + attempts
+                if (seenPlaceIds.has(placeId)) continue;
+                seenPlaceIds.add(placeId);
 
-            totalImported += 1;
+                const d = await placesGetDetails(placeId);
+
+                // ✅ city filter (Ramallah only-ish)
+                if (!placeMatchesCity(d, city)) continue;
+
+                const name = d?.displayName?.text || p?.displayName?.text || null;
+                const lat = d?.location?.latitude ?? p?.location?.latitude ?? null;
+                const lng = d?.location?.longitude ?? p?.location?.longitude ?? null;
+
+                const rating = d?.rating ?? p?.rating ?? null;
+                const userRatingsTotal = d?.userRatingCount ?? p?.userRatingCount ?? null;
+
+                const primaryType = d?.primaryType ?? p?.primaryType ?? null;
+                const types = d?.types ?? p?.types ?? [];
+
+                const bestCategoryId =
+                    pickBestCategoryIdForPlace({ placeTypes: types, primaryType }, categories) || cat.id;
+
+                const openHours = d?.regularOpeningHours ?? null;
+
+                const locationId = await upsertLocation({
+                    city_id: city.id,
+                    category_id: bestCategoryId,
+                    name,
+                    google_place_id: placeId,
+                    lat,
+                    lng,
+                    rating,
+                    user_ratings_total: userRatingsTotal,
+                    open_hours: openHours ? JSON.stringify(openHours) : null,
+                });
+
+                const firstPhotoName = d?.photos?.[0]?.name || p?.photos?.[0]?.name || null;
+                await upsertPrimaryPhoto(locationId, firstPhotoName);
+
+                const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
+                const categorySlug = categorySlugRow?.slug || cat.slug;
+
+                await linkTripTypesByRules(locationId, categorySlug);
+
+                placesForGemini.push({
+                    google_place_id: placeId,
+                    name,
+                    category_slug: categorySlug,
+                    rating,
+                    user_ratings_total: userRatingsTotal,
+                });
+
+                totalImported += 1;
+                collectedForCat += 1;
+            }
+
+            attempts++;
         }
     }
+
 
     // Gemini only for ones needing it
     const googleIds = placesForGemini.map(p => p.google_place_id);
@@ -499,7 +606,8 @@ export async function ensureLocationsForTripType({
     if (!cityId || !tripTypeSlug) return { didSeed: false, reason: "missing params" };
 
     const safeTripType = String(tripTypeSlug).toLowerCase().trim();
-    const required = await getRuleCategoriesByTripTypeSlug(tripTypeSlug);
+    const required = await getRuleCategoriesByTripTypeSlug(safeTripType);
+
     if (!required.length) return { didSeed: false, reason: "no required_category_slugs" };
 
     const missing = await getMissingCategorySlugsForCity(cityId, required);
