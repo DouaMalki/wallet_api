@@ -1,5 +1,6 @@
 import express from "express";
-import { getAllUsers, getUserById, getUsersWithHighTripCreation, deleteUser, blockUser } from "../controllers/usersController.js";
+import { getAllUsers, getUserById, getUsersWithHighTripCreation, deleteUser, blockUser, updateProfileImage } from "../controllers/usersController.js";
+import { requireAuth } from "../middleware/firebaseAuthMiddleware.js";
 
 const router = express.Router();
 
@@ -8,6 +9,8 @@ router.get("/high-trip-creation", getUsersWithHighTripCreation);
 router.get("/:id", getUserById);
 router.patch("/:id/block", blockUser);
 router.delete("/:id", deleteUser);
+router.put("/update-profile-image", requireAuth, updateProfileImage);
+
 
 
 export default router;
