@@ -43,9 +43,30 @@ async function getRuleCategoriesByTripTypeSlug(tripTypeSlug) {
       AND t.slug = ${tripTypeSlug}
     LIMIT 1
   `;
-    const rule = rows?.[0]?.rule_json;
-    const slugs = rule?.required_category_slugs || [];
-    return Array.isArray(slugs) ? slugs.map(s => String(s).toLowerCase().trim()).filter(Boolean) : [];
+    // const rule = rows?.[0]?.rule_json;
+    // const slugs = rule?.required_category_slugs || [];
+    // return Array.isArray(slugs) ? slugs.map(s => String(s).toLowerCase().trim()).filter(Boolean) : [];
+
+    // (1) required_category_slugs
+    const required = Array.isArray(rule?.required_category_slugs)
+        ? rule.required_category_slugs
+        : [];
+
+    // (2) all categories inside day_pattern
+    const dayPattern = Array.isArray(rule?.day_pattern) ? rule.day_pattern : [];
+    const fromPattern = dayPattern.flatMap((item) =>
+        Array.isArray(item?.categories) ? item.categories : []
+    );
+
+    // (3) union + normalize
+    const set = new Set(
+        [...required, ...fromPattern]
+            .map((s) => String(s).toLowerCase().trim())
+            .filter(Boolean)
+    );
+
+    return [...set];
+
 }
 
 async function getCategoriesBySlugs(slugs) {
