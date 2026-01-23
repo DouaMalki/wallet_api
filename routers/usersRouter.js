@@ -1,6 +1,6 @@
 import express from "express";
 import { getAllUsers, getUserById, getUsersWithHighTripCreation, deleteUser, blockUser, updateProfileImage } from "../controllers/usersController.js";
-import { requireAuth } from "../middleware/requireAuth.js";
+import { requireAuth } from "../middleware/firebaseAuthMiddleware.js";
 
 const router = express.Router();
 

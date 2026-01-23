@@ -73,6 +73,7 @@ export async function getProblemTypes(req, res) {
 
 
 /* Get the locations of a trip plan for survey */
+/* Get the locations of a trip plan for survey (grouped by day) */
 export async function getSurveyLocations(req, res) {
   const { plan_id } = req.body;
 
@@ -81,21 +82,25 @@ export async function getSurveyLocations(req, res) {
   }
 
   try {
-    const locations = await sql`
+    const rows = await sql`
       SELECT
-        l.id            AS location_id,
+        d.id          AS day_id,
+        d.day_key,
+
+        l.id          AS location_id,
         l.name,
         l.rating,
         l.user_ratings_total,
         i.position,
 
-        -- cover photo
         lp.photo_reference,
         lp.photo_url
 
-      FROM saved_trip_plan_items i
-      JOIN saved_trip_plan_days d ON d.id = i.plan_day_id
-      JOIN locations l ON l.id = i.location_id
+      FROM saved_trip_plan_days d
+      JOIN saved_trip_plan_items i
+        ON i.plan_day_id = d.id
+      JOIN locations l
+        ON l.id = i.location_id
 
       LEFT JOIN LATERAL (
         SELECT photo_reference, photo_url
@@ -106,10 +111,33 @@ export async function getSurveyLocations(req, res) {
       ) lp ON TRUE
 
       WHERE d.plan_id = ${plan_id}
-      ORDER BY i.position
+      ORDER BY d.day_key, i.position
     `;
 
-    res.status(200).json(locations);
+    /* Group by day */
+    const daysMap = {};
+
+    for (const row of rows) {
+      if (!daysMap[row.day_id]) {
+        daysMap[row.day_id] = {
+          day_id: row.day_id,
+          day_key: row.day_key,
+          locations: [],
+        };
+      }
+
+      daysMap[row.day_id].locations.push({
+        location_id: row.location_id,
+        name: row.name,
+        rating: row.rating,
+        user_ratings_total: row.user_ratings_total,
+        position: row.position,
+        photo_reference: row.photo_reference,
+        photo_url: row.photo_url,
+      });
+    }
+
+    res.status(200).json(Object.values(daysMap));
   } catch (err) {
     console.error("Get survey locations error:", err);
     res.status(500).json({ message: "Failed to fetch survey locations" });

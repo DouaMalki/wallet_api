@@ -54,3 +54,26 @@ export async function updateLanguage(req, res) {
 
   res.json(result[0]);
 }
+
+export async function updateProfileImage(req, res) {
+  const { user_id, profile_image } = req.body;
+
+  if (!user_id || !profile_image) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+    const result = await sql`
+      UPDATE users
+      SET profile_image = ${profile_image}
+      WHERE user_id = ${user_id}
+      RETURNING user_id, profile_image
+    `;
+
+    res.status(200).json(result[0]);
+  } catch (err) {
+    console.error("Update profile image error:", err);
+    res.status(500).json({ message: "Failed to update profile image" });
+  }
+}
+
