@@ -1,5 +1,6 @@
 import express from "express";
-import { getAllUsers, getUserById, getUsersWithHighTripCreation, deleteUser, blockUser } from "../controllers/usersController.js";
+import { getAllUsers, getUserById, getUsersWithHighTripCreation, deleteUser, blockUser, updateProfileImage } from "../controllers/usersController.js";
+import { requireAuth } from "../middleware/requireAuth.js";
 
 const router = express.Router();
 
