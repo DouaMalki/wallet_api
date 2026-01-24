@@ -8,7 +8,8 @@ import {
     updateProblemsInReports,
     updateFinishedTrips,
     updateAnsweredSurveys,
-    markSurveyAsAnswered
+    markSurveyAsAnswered,
+    computeTripRating
 } from "../controllers/surveyController.js";
 
 
@@ -28,5 +29,6 @@ router.post("/survey/updateFinished", updateFinishedTrips);
 router.post("/survey/updateAnswered", updateAnsweredSurveys);
 router.post("/survey/markAnswered", markSurveyAsAnswered);
 
+router.post("/survey/computeRating", computeTripRating);
 
 export default router;

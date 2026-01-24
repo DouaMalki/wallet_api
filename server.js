@@ -19,6 +19,7 @@ import surveyRouter from "./routers/surveyRouter.js";
 import browseRouter from "./routers/browseRouter.js";
 import photosRouter from "./routers/photosRouter.js";
 import saveTripPlanRouter from "./routers/saveTripPlanRouter.js";
+import saveTripPlanRouter from "./routers/homeRouter.js";
 
 
 const app = express();
@@ -37,6 +38,7 @@ app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+// what are these?!!
 console.log("UPSTASH URL set?", !!process.env.UPSTASH_REDIS_REST_URL);
 console.log("UPSTASH TOKEN set?", !!process.env.UPSTASH_REDIS_REST_TOKEN);
 console.log("HTTP_PROXY:", process.env.HTTP_PROXY || null);
@@ -51,6 +53,7 @@ app.use("/api/reports", reportsRouter);
 app.use("/api", authenticationRouter);
 app.use("/api", editProfileRouter);
 app.use("/api", surveyRouter);
+app.use("/api", homeRouter);
 
 
 // routers created by jenin
@@ -69,6 +72,8 @@ app.use("/api/categories", categoriesRouter);
 app.use("/api/photos", photosRouter);
 app.use("/api/saved_trip_plans", saveTripPlanRouter);
 
+
+// what is that?!!
 app.use((err, req, res, next) => {
   console.error("GLOBAL ERROR:", {
     url: req.originalUrl,
