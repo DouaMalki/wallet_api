@@ -38,13 +38,6 @@ app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-// what are these?!!
-console.log("UPSTASH URL set?", !!process.env.UPSTASH_REDIS_REST_URL);
-console.log("UPSTASH TOKEN set?", !!process.env.UPSTASH_REDIS_REST_TOKEN);
-console.log("HTTP_PROXY:", process.env.HTTP_PROXY || null);
-console.log("HTTPS_PROXY:", process.env.HTTPS_PROXY || null);
-console.log("ALL_PROXY:", process.env.ALL_PROXY || null);
-console.log("NO_PROXY:", process.env.NO_PROXY || null);
 
 
 
@@ -73,16 +66,6 @@ app.use("/api/photos", photosRouter);
 app.use("/api/saved_trip_plans", saveTripPlanRouter);
 
 
-// what is that?!!
-app.use((err, req, res, next) => {
-  console.error("GLOBAL ERROR:", {
-    url: req.originalUrl,
-    method: req.method,
-    message: err?.message,
-    stack: err?.stack,
-  });
-  res.status(500).json({ message: "Internal server error", debug: err?.message });
-});
 
 
 
