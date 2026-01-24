@@ -25,6 +25,8 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
       l.recommended_for,
 
       COALESCE(tt.trip_types, ARRAY[]::text[]) AS trip_types,
+      
+
 
       -- ✅ cover photo (one per location)
       cp.photo_reference AS cover_photo_reference,

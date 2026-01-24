@@ -97,11 +97,17 @@ async function getPlacesNeedingGemini(cityId, googlePlaceIds) {
     WHERE city_id = ${cityId}
       AND google_place_id = ANY(${googlePlaceIds})
       AND (
-        estimated_time IS NULL OR
-        max_cost IS NULL OR
+  estimated_time IS NULL OR estimated_time <= 0 OR
+        max_cost IS NULL OR max_cost <= 0 OR
         recommended_for IS NULL OR cardinality(recommended_for) = 0 OR
-      closed_days IS NULL OR cardinality(closed_days) = 0
-      )
+        closed_days IS NULL
+        
+        
+
+)
+    
+    
+
   `;
     return new Set(rows.map(r => r.google_place_id));
 }
@@ -168,21 +174,103 @@ async function linkTripTypesByRules(locationId, categorySlug) {
     }
 }
 
+// async function updateGeminiFields(googlePlaceId, enriched) {
+//     const rec = Array.isArray(enriched.recommended_for) ? enriched.recommended_for : [];
+//     const closed = Array.isArray(enriched.closed_days) ? enriched.closed_days : [];
+
+//     await sql`
+//     UPDATE public.locations
+//     SET
+//       estimated_time  = COALESCE(public.locations.estimated_time, ${enriched.estimated_time_minutes}),
+//       max_cost        = COALESCE(public.locations.max_cost, ${enriched.max_cost_ils}),
+//       recommended_for = COALESCE(public.locations.recommended_for, ${rec}::text[]),
+//       closed_days     = COALESCE(public.locations.closed_days, ${closed}::text[]),
+//       updated_at = now()
+//     WHERE google_place_id = ${googlePlaceId}
+//   `;
+// }
+
+// async function updateGeminiFields(googlePlaceId, enriched) {
+//     // Sanitization أولي
+//     const rec = Array.isArray(enriched.recommended_for) ? enriched.recommended_for.filter(Boolean) : [];
+//     const closed = Array.isArray(enriched.closed_days) ? enriched.closed_days.filter(Boolean) : [];
+
+//     const est = Number(enriched.estimated_time_minutes);
+//     const cost = Number(enriched.max_cost_ils);
+
+//     await sql`
+//     UPDATE public.locations
+//     SET
+//       estimated_time = CASE
+//         WHEN public.locations.estimated_time IS NULL OR public.locations.estimated_time <= 0
+//           THEN ${Number.isFinite(est) && est > 0 ? est : 60}
+//         ELSE public.locations.estimated_time
+//       END,
+
+//       max_cost = CASE
+//         WHEN public.locations.max_cost IS NULL OR public.locations.max_cost <= 0
+//           THEN ${Number.isFinite(cost) && cost > 0 ? cost : 50}
+//         ELSE public.locations.max_cost
+//       END,
+
+//       recommended_for = CASE
+//         WHEN public.locations.recommended_for IS NULL OR cardinality(public.locations.recommended_for) = 0
+//           THEN ${rec.length ? rec : ["friends"]}::text[]
+//         ELSE public.locations.recommended_for
+//       END,
+
+//       closed_days = CASE
+//         WHEN public.locations.closed_days IS NULL OR cardinality(public.locations.closed_days) = 0
+//           THEN ${closed.length ? closed : ["fri"]}::text[]
+//         ELSE public.locations.closed_days
+//       END,
+
+//       updated_at = now()
+//     WHERE google_place_id = ${googlePlaceId}
+//   `;
+// }
+
 async function updateGeminiFields(googlePlaceId, enriched) {
-    const rec = Array.isArray(enriched.recommended_for) ? enriched.recommended_for : [];
-    const closed = Array.isArray(enriched.closed_days) ? enriched.closed_days : [];
+    const rec = Array.isArray(enriched.recommended_for) ? enriched.recommended_for.filter(Boolean) : [];
+    const closed = Array.isArray(enriched.closed_days) ? enriched.closed_days.filter(Boolean) : [];
+
+    const est = Number(enriched.estimated_time_minutes);
+    const cost = Number(enriched.max_cost_ils);
 
     await sql`
     UPDATE public.locations
     SET
-      estimated_time  = COALESCE(public.locations.estimated_time, ${enriched.estimated_time_minutes}),
-      max_cost        = COALESCE(public.locations.max_cost, ${enriched.max_cost_ils}),
-      recommended_for = COALESCE(public.locations.recommended_for, ${rec}::text[]),
-      closed_days     = COALESCE(public.locations.closed_days, ${closed}::text[]),
+      estimated_time = CASE
+        WHEN estimated_time IS NULL OR estimated_time <= 0
+          THEN ${Number.isFinite(est) && est > 0 ? est : 60}
+        ELSE estimated_time
+      END,
+
+      max_cost = CASE
+        WHEN max_cost IS NULL OR max_cost <= 0
+          THEN ${Number.isFinite(cost) && cost > 0 ? cost : 50}
+        ELSE max_cost
+      END,
+
+      recommended_for = CASE
+        WHEN recommended_for IS NULL OR cardinality(recommended_for) = 0
+          THEN ${rec.length ? rec : ["friends"]}::text[]
+        ELSE recommended_for
+      END,
+
+      closed_days = CASE
+  WHEN closed_days IS NULL OR cardinality(closed_days) = 0
+    THEN ${closed}::text[]
+  ELSE closed_days
+END
+
+
+
       updated_at = now()
     WHERE google_place_id = ${googlePlaceId}
   `;
 }
+
 
 /* =========================
    Google Places helpers (same as your script)
@@ -267,17 +355,17 @@ async function geminiEnrich(batch, cityName, attempt = 1) {
                     properties: {
                         google_place_id: { type: "string" },
                         estimated_time_minutes: { type: "integer", minimum: 10, maximum: 360 },
-                        max_cost_ils: { type: "number", minimum: 0, maximum: 2000 },
+                        max_cost_ils: { type: "number", minimum: 1, maximum: 2000 },
                         recommended_for: {
                             type: "array",
                             items: { type: "string", enum: ["solo", "couples", "friends", "family", "kids", "elderly"] },
-                            minItems: 0,
+                            minItems: 1,
                             maxItems: 6,
                         },
                         closed_days: {
                             type: "array",
                             items: { type: "string", enum: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
-                            minItems: 0,
+                            minItems: 1,
                             maxItems: 7,
                         },
                     },
@@ -304,7 +392,13 @@ For each place, return best-effort estimates:
 - max_cost_ils
 - recommended_for: subset of [solo,couples,friends,family,kids,elderly]
 - closed_days
-IMPORTANT: Output must follow the provided JSON schema exactly.
+IMPORTANT:
+- Do not return 0 for max_cost_ils or estimated_time_minutes.
+- recommended_for must NOT be an empty array.
+- closed_days must NOT be an empty array
+- Output must follow the provided JSON schema exactly.
+
+
 
 Places:
 ${JSON.stringify(compactPlaces, null, 2)}
@@ -380,8 +474,6 @@ export async function seedCityOnDemand({
 
         const minNeed = Number(cat.min_results_per_city ?? 20);
         const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
-
-        console.log("CATEGORY:", cat.slug, "includedTypes:", includedTypes);
 
         const resp = await placesSearchNearby({
             lat: city.center_lat,
@@ -475,6 +567,82 @@ export async function seedCityOnDemand({
     return { imported: totalImported, geminiEnriched, categories: slugs };
 }
 
+async function getTripTypePlacesNeedingGemini(cityId, tripTypeSlug, limit = 120) {
+    const rows = await sql`
+    SELECT l.google_place_id, l.name, c.slug AS category_slug, l.rating, l.user_ratings_total
+    FROM public.locations l
+    JOIN public.location_trip_types ltt ON ltt.location_id = l.id
+    JOIN public.trip_types tt ON tt.id = ltt.trip_type_id
+    LEFT JOIN public.categories c ON c.id = l.category_id
+    WHERE l.city_id = ${cityId}
+      AND tt.slug = ${tripTypeSlug}
+      AND l.google_place_id IS NOT NULL
+      AND (
+        l.estimated_time IS NULL OR l.estimated_time <= 0 OR
+        l.max_cost IS NULL OR l.max_cost <= 0 OR
+        l.recommended_for IS NULL OR cardinality(l.recommended_for) = 0 OR
+        l.closed_days IS NULL
+      )
+    ORDER BY l.updated_at ASC
+    LIMIT ${limit}
+  `;
+    return rows.map(r => ({
+        google_place_id: r.google_place_id,
+        name: r.name,
+        category_slug: r.category_slug || null,
+        rating: r.rating ?? null,
+        user_ratings_total: r.user_ratings_total ?? null,
+    }));
+}
+
+async function enrichTripTypePlacesNeedingGemini({ city, tripTypeSlug, batchSize = 15, limit = 120 }) {
+    const need = await getTripTypePlacesNeedingGemini(city.id, tripTypeSlug, limit);
+    if (!need.length) return { geminiEnriched: 0 };
+
+    let geminiEnriched = 0;
+    for (const group of chunk(need, batchSize)) {
+        const out = await geminiEnrich(group, city.name);
+        const results = out?.results || [];
+        const map = new Map(results.map(r => [r.google_place_id, r]));
+
+        for (const p of group) {
+            const r = map.get(p.google_place_id);
+            if (!r) continue;
+            await updateGeminiFields(p.google_place_id, r);
+        }
+        geminiEnriched += group.length;
+    }
+
+    // Hardening نهائي: لو بقي شيء غلط (نادر) نسكرها defaults
+    await sql`
+  UPDATE public.locations l
+  SET
+    estimated_time = CASE WHEN l.estimated_time IS NULL OR l.estimated_time <= 0 THEN 60 ELSE l.estimated_time END,
+    max_cost       = CASE WHEN l.max_cost IS NULL OR l.max_cost <= 0 THEN 50 ELSE l.max_cost END,
+    recommended_for= CASE WHEN l.recommended_for IS NULL OR cardinality(l.recommended_for)=0 THEN ARRAY['friends']::text[] ELSE l.recommended_for END,
+    closed_days    = CASE WHEN l.closed_days IS NULL THEN ARRAY[]::text[] ELSE l.closed_days END,
+    updated_at = now()
+  WHERE l.city_id = ${city.id}
+    AND EXISTS (
+      SELECT 1
+      FROM public.location_trip_types ltt
+      JOIN public.trip_types tt ON tt.id = ltt.trip_type_id
+      WHERE ltt.location_id = l.id
+        AND tt.slug = ${tripTypeSlug}
+    )
+    AND (
+      l.estimated_time IS NULL OR l.estimated_time <= 0 OR
+      l.max_cost IS NULL OR l.max_cost <= 0 OR
+      l.recommended_for IS NULL OR cardinality(l.recommended_for) = 0 OR
+      l.closed_days IS NULL
+    )
+`;
+
+
+    return { geminiEnriched };
+}
+
+
 /* =========================
    Public API: ensure (called by controller)
    ========================= */
@@ -492,7 +660,18 @@ export async function ensureLocationsForTripType({
     if (!required.length) return { didSeed: false, reason: "no required_category_slugs" };
 
     const missing = await getMissingCategorySlugsForCity(cityId, required);
-    if (!missing.length) return { didSeed: false, reason: "already sufficient" };
+    const city = await getCityOrThrow(cityId);
+    // if (!missing.length) return { didSeed: false, reason: "already sufficient" };
+    if (!missing.length) {
+        const enriched = await enrichTripTypePlacesNeedingGemini({
+            city,
+            tripTypeSlug: safeTripType,
+            batchSize,
+            limit: 120,
+        });
+
+        return { didSeed: false, reason: "already sufficient (seed), but enrichment ensured", enriched };
+    }
 
 
     // ---------------------------
@@ -520,7 +699,14 @@ export async function ensureLocationsForTripType({
             batchSize,
         });
 
-        return { didSeed: true, missing, stats };
+        const enriched = await enrichTripTypePlacesNeedingGemini({
+            city,
+            tripTypeSlug: safeTripType,
+            batchSize,
+            limit: 160,
+        });
+
+        return { didSeed: true, missing, stats, enriched };
     } finally {
         // Ensure unlock even if seed fails
         await sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`;
