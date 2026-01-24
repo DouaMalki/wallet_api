@@ -361,3 +361,73 @@ export async function markSurveyAsAnswered(req, res) {
     });
   }
 }
+
+
+/* Compute final trip rating */
+export async function computeTripRating(req, res) {
+  const { plan_id, locationRatings, selectedProblems } = req.body;
+
+  if (!plan_id) {
+    return res.status(400).json({ message: "Missing plan_id" });
+  }
+
+  const USER_WEIGHT = 0.6;
+  const DB_WEIGHT = 0.4;
+  const PROBLEM_PENALTY = 0.2;
+
+  try {
+    /* Get all locations in the trip */
+    const locations = await sql`
+      SELECT
+        l.id,
+        COALESCE(l.rating, 0) AS db_rating
+      FROM saved_trip_plan_items i
+      JOIN saved_trip_plan_days d ON d.id = i.plan_day_id
+      JOIN locations l ON l.id = i.location_id
+      WHERE d.plan_id = ${plan_id}
+    `;
+
+    if (locations.length === 0) {
+      return res.status(400).json({ message: "No locations found" });
+    }
+
+    let sum = 0;
+
+    for (const loc of locations) {
+      const userRating = locationRatings?.[loc.id];
+
+      const finalLocationRating =
+        userRating
+          ? (DB_WEIGHT * loc.db_rating) + (USER_WEIGHT * userRating)
+          : loc.db_rating;
+
+      sum += finalLocationRating;
+    }
+
+    const avgLocationsRating = sum / locations.length;
+
+    const problemsCount = selectedProblems?.length || 0;
+    const penalty = problemsCount * PROBLEM_PENALTY;
+
+    let finalTripRating = avgLocationsRating - penalty;
+
+    /* Clamp between 1 and 5 */
+    finalTripRating = Math.max(1, Math.min(5, Number(finalTripRating.toFixed(2))));
+
+    /* Save rating in DB */
+    await sql`
+      UPDATE saved_trip_plans
+      SET rating = ${finalTripRating}
+      WHERE id = ${plan_id}
+    `;
+
+    res.status(200).json({
+      rating: finalTripRating,
+    });
+
+  } catch (err) {
+    console.error("Compute trip rating error:", err);
+    res.status(500).json({ message: "Failed to compute trip rating" });
+  }
+}
+

@@ -38,30 +38,42 @@ export async function signUp(req, res) {
 
 // Login controller
 export async function login(req, res) {
-  const { firebase_uid } = req.body;
+  const { firebase_uid, email, name } = req.body;
+
   if (!firebase_uid) {
-    return res.status(400).json({
-      message: "Missing firebase_uid",
-    });
+    return res.status(400).json({ message: "Missing firebase_uid" });
   }
 
-  try {
-    const result = await sql`
-      SELECT *
-      FROM users
-      WHERE firebase_uid = ${firebase_uid}
+  // Check if user exists
+  const users = await sql`
+    SELECT *
+    FROM users
+    WHERE firebase_uid = ${firebase_uid}
+  `;
+
+  // First-time Google login, create user
+  if (users.length === 0) {
+    const newUser = await sql`
+      INSERT INTO users (
+        firebase_uid,
+        name,
+        email,
+        role,
+        created_at
+      )
+      VALUES (
+        ${firebase_uid},
+        ${name ?? "Google User"},
+        ${email},
+        'user',
+        NOW()
+      )
+      RETURNING *
     `;
-    if (result.length === 0) {
-      return res.status(404).json({
-        message: "User not found in database",
-      });
-    }
-    const user = result[0];
-    res.json(user);
-  } catch (err) {
-    console.error("Login controller error:", err);
-    res.status(500).json({
-      message: "Login controller error",
-    });
+
+    return res.status(201).json(newUser[0]);
   }
+
+  // Existing user
+  return res.status(200).json(users[0]);
 }
