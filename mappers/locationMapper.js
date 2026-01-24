@@ -197,14 +197,19 @@ export function mapLocationRow(row) {
         lat: row.lat != null ? Number(row.lat) : null,
         lng: row.lng != null ? Number(row.lng) : null,
 
-        estimatedTime: row.estimated_time != null ? Number(row.estimated_time) : null,
-        maxCost: row.max_cost != null ? Number(row.max_cost) : null,
+        // estimatedTime: row.estimated_time != null ? Number(row.estimated_time) : null,
+        // maxCost: row.max_cost != null ? Number(row.max_cost) : null,
+        estimatedTime: row.estimated_time != null && Number(row.estimated_time) > 0 ? Number(row.estimated_time) : 60,
+        maxCost: row.max_cost != null && Number(row.max_cost) > 0 ? Number(row.max_cost) : 50,
 
         rating: row.rating != null ? Number(row.rating) : null,
 
         openHours: row.open_hours || null,
-        closedDays: row.closed_days || [],
-        recommendedFor: row.recommended_for || [],
+
+        // recommended_for: row.recommended_for ?? [],
+        // closed_days: row.closed_days ?? [],
+        closedDays: Array.isArray(row.closed_days) && row.closed_days.length ? row.closed_days : ["fri"],
+        recommendedFor: Array.isArray(row.recommended_for) && row.recommended_for.length ? row.recommended_for : ["friends"],
 
         tripTypes: row.trip_types || [],
 
