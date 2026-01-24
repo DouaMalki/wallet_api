@@ -19,7 +19,7 @@ import surveyRouter from "./routers/surveyRouter.js";
 import browseRouter from "./routers/browseRouter.js";
 import photosRouter from "./routers/photosRouter.js";
 import saveTripPlanRouter from "./routers/saveTripPlanRouter.js";
-//import saveTripPlanRouter from "./routers/homeRouter.js";
+import saveTripPlanRouter from "./routers/homeRouter.js";
 
 
 const app = express();
