@@ -219,8 +219,7 @@ export async function publishTripPlan(req, res) {
       UPDATE saved_trip_plans
       SET
         published = true,
-        title = ${title},
-        updated_at = now()
+        title = ${title}
       WHERE id = ${plan_id}
     `;
 
@@ -365,7 +364,7 @@ export async function markSurveyAsAnswered(req, res) {
 
 /* Compute final trip rating */
 export async function computeTripRating(req, res) {
-  const { plan_id, locationRatings, selectedProblems } = req.body;
+  const { plan_id, locationRatings = {}, selectedProblems = [] } = req.body;
 
   if (!plan_id) {
     return res.status(400).json({ message: "Missing plan_id" });
@@ -391,43 +390,55 @@ export async function computeTripRating(req, res) {
       return res.status(400).json({ message: "No locations found" });
     }
 
-    let sum = 0;
+    /* DB locations ratings */
+    const totalDbRating = locations.reduce(
+      (sum, l) => sum + Number(l.db_rating),
+      0
+    );
+    const avgDbRating = totalDbRating / locations.length;
+
+    /* User locations ratings */
+    let userRatingsSum = 0;
+    let ratedLocationsCount = 0;
 
     for (const loc of locations) {
-      const userRating = locationRatings?.[loc.id];
-
-      const finalLocationRating =
-        userRating
-          ? (DB_WEIGHT * loc.db_rating) + (USER_WEIGHT * userRating)
-          : loc.db_rating;
-
-      sum += finalLocationRating;
+      if (locationRatings[loc.id]) {
+        userRatingsSum += Number(locationRatings[loc.id]);
+        ratedLocationsCount++;
+      }
     }
 
-    const avgLocationsRating = sum / locations.length;
+    const avgUserRating =
+      ratedLocationsCount > 0
+        ? userRatingsSum / ratedLocationsCount
+        : 0;
 
-    const problemsCount = selectedProblems?.length || 0;
-    const penalty = problemsCount * PROBLEM_PENALTY;
+    /* Problems penalty */
+    const penalty = selectedProblems.length * PROBLEM_PENALTY;
 
-    let finalTripRating = avgLocationsRating - penalty;
+    /* Final rating */
+    let finalTripRating =
+      avgDbRating * DB_WEIGHT +
+      avgUserRating * USER_WEIGHT -
+      penalty;
 
     /* Clamp between 1 and 5 */
-    finalTripRating = Math.max(1, Math.min(5, Number(finalTripRating.toFixed(2))));
+    finalTripRating = Math.max(
+      1,
+      Math.min(5, Number(finalTripRating.toFixed(2)))
+    );
 
-    /* Save rating in DB */
+    /* Save rating */
     await sql`
       UPDATE saved_trip_plans
       SET rating = ${finalTripRating}
       WHERE id = ${plan_id}
     `;
 
-    res.status(200).json({
-      rating: finalTripRating,
-    });
+    res.status(200).json({ rating: finalTripRating });
 
   } catch (err) {
     console.error("Compute trip rating error:", err);
     res.status(500).json({ message: "Failed to compute trip rating" });
   }
 }
-
