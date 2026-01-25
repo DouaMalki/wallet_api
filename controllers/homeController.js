@@ -68,14 +68,16 @@ export async function getPublishedTripPlans(req, res) {
   }
 }
 
+import { sql } from "../config/db.js";
 
 /*
-  Rate a published trip plan
-  Formula:
-  new_rating = (old_rating * total_ratings + user_rating) / (total_ratings + 1)
+  Rate a published trip plan (CORRECT VERSION)
+  - One rating per user per plan
+  - Re-rating updates previous rating
 */
 export async function ratePublishedTripPlan(req, res) {
   const { plan_id, rating } = req.body;
+  const { user_id } = req.user; // ⚠️ user must be authenticated
 
   if (!plan_id || !rating) {
     return res.status(400).json({
@@ -91,46 +93,41 @@ export async function ratePublishedTripPlan(req, res) {
   }
 
   try {
-    /* Get current rating data */
-    const result = await sql`
-      SELECT
-        COALESCE(rating, 0) AS rating,
-        COALESCE(total_ratings, 0) AS total_ratings
+    /* 1️⃣ Ensure plan exists and is published */
+    const plan = await sql`
+      SELECT id
       FROM saved_trip_plans
       WHERE id = ${plan_id}
         AND published = true
     `;
 
-    if (result.length === 0) {
+    if (plan.length === 0) {
       return res.status(404).json({
         message: "Published trip plan not found",
       });
     }
 
-    const { rating: oldRating, total_ratings } = result[0];
-
-    const newRating = Number(
-      (
-        (oldRating * total_ratings + userRating) /
-        (total_ratings + 1)
-      ).toFixed(2)
-    );
-
-    /* Update trip plan */
+    /* 2️⃣ Insert or update user rating */
     await sql`
-      UPDATE saved_trip_plans
-      SET
-        rating = ${newRating},
-        total_ratings = ${total_ratings + 1},
+      INSERT INTO trip_plan_ratings (plan_id, user_id, rating)
+      VALUES (${plan_id}, ${user_id}, ${userRating})
+      ON CONFLICT (plan_id, user_id)
+      DO UPDATE SET
+        rating = EXCLUDED.rating,
         updated_at = now()
+    `;
+
+    /* 3️⃣ Get updated rating from saved_trip_plans (trigger already ran) */
+    const updated = await sql`
+      SELECT rating, total_ratings
+      FROM saved_trip_plans
       WHERE id = ${plan_id}
     `;
 
     res.status(200).json({
-      rating: newRating,
-      total_ratings: total_ratings + 1,
+      rating: updated[0].rating,
+      total_ratings: updated[0].total_ratings,
     });
-
   } catch (err) {
     console.error("Rate trip plan error:", err);
     res.status(500).json({
