@@ -5,6 +5,6 @@ import {
 
 const router = express.Router();
 
-router.put("/home/published", getPublishedTripPlans);
+router.get("/home/published", getPublishedTripPlans);
 
 export default router;
