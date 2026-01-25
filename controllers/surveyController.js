@@ -361,11 +361,23 @@ export async function markSurveyAsAnswered(req, res) {
   }
 }
 
-export async function computeTripRating(req, res) {
-  const { plan_id, locationRatings = {}, selectedProblems = [] } = req.body;
 
-  if (!plan_id) {
-    return res.status(400).json({ message: "Missing plan_id" });
+/*
+  Compute initial trip rating (before publish)
+  and insert it into trip_plan_ratings
+*/
+export async function computeTripRating(req, res) {
+  const {
+    plan_id,
+    user_id,
+    locationRatings = {}, 
+    selectedProblems = []  
+  } = req.body;
+
+  if (!plan_id || !user_id) {
+    return res.status(400).json({
+      message: "Missing plan_id or user_id",
+    });
   }
 
   const USER_WEIGHT = 0.6;
@@ -373,56 +385,84 @@ export async function computeTripRating(req, res) {
   const PROBLEM_PENALTY = 0.2;
 
   try {
+    /* Get all locations in the trip */
     const locations = await sql`
       SELECT
         l.id,
         COALESCE(l.rating, 0) AS db_rating
       FROM saved_trip_plan_items i
-      JOIN saved_trip_plan_days d ON d.id = i.plan_day_id
-      JOIN locations l ON l.id = i.location_id
+      JOIN saved_trip_plan_days d
+        ON d.id = i.plan_day_id
+      JOIN locations l
+        ON l.id = i.location_id
       WHERE d.plan_id = ${plan_id}
     `;
 
     if (locations.length === 0) {
-      return res.status(400).json({ message: "No locations found" });
+      return res.status(400).json({
+        message: "No locations found for this trip plan",
+      });
     }
 
+    /* Average DB rating */
     const avgDbRating =
-      locations.reduce((sum, l) => sum + Number(l.db_rating), 0) /
-      locations.length;
+      locations.reduce(
+        (sum, loc) => sum + Number(loc.db_rating),
+        0
+      ) / locations.length;
 
+    /* Average USER rating */
     let userRatingsSum = 0;
     let ratedCount = 0;
 
     for (const loc of locations) {
-      if (locationRatings[loc.id]) {
+      if (locationRatings[loc.id] !== undefined) {
         userRatingsSum += Number(locationRatings[loc.id]);
         ratedCount++;
       }
     }
-
     const avgUserRating =
       ratedCount > 0 ? userRatingsSum / ratedCount : 0;
 
+    /* Problems penalty */
     const penalty = selectedProblems.length * PROBLEM_PENALTY;
 
+    /* Final rating */
     let finalRating =
-      avgDbRating * DB_WEIGHT +
-      avgUserRating * USER_WEIGHT -
+      avgUserRating * USER_WEIGHT +
+      avgDbRating * DB_WEIGHT -
       penalty;
 
-    finalRating = Math.max(1, Math.min(5, Number(finalRating.toFixed(2))));
+    /* Clamp between 1 and 5 */
+    finalRating = Math.max(1, Math.min(5, finalRating));
 
-    /* Save INITIAL rating only */
-    await sql`
-      UPDATE saved_trip_plans
-      SET initial_rating = ${finalRating}
-      WHERE id = ${plan_id}
+    /* trip_plan_ratings.rating is INTEGER */
+    const finalRatingInt = Math.round(finalRating);
+
+    /* Insert rating */
+    const insertedRating = await sql`
+      INSERT INTO trip_plan_ratings (
+        plan_id,
+        user_id,
+        rating
+      )
+      VALUES (
+        ${plan_id},
+        ${user_id},
+        ${finalRatingInt}
+      )
+      RETURNING *
     `;
 
-    res.json({ rating: finalRating });
+    res.status(201).json({
+      rating: insertedRating[0],
+      computed_value: Number(finalRating.toFixed(2)),
+    });
+
   } catch (err) {
     console.error("Compute trip rating error:", err);
-    res.status(500).json({ message: "Failed to compute trip rating" });
+    res.status(500).json({
+      message: "Failed to compute trip rating",
+    });
   }
 }
