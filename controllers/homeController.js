@@ -11,6 +11,12 @@ export async function getPublishedTripPlans(req, res) {
         p.city_id,
         p.trip_type_slug,
         p.created_at,
+        p.start_date,
+        p.end_date,
+        p.number_of_seens,
+
+        /* ✅ Total days (inclusive) */
+        (p.end_date - p.start_date + 1) AS total_days,
 
         /* Global rating (from users) */
         stats.rating,
@@ -75,6 +81,7 @@ export async function getPublishedTripPlans(req, res) {
     });
   }
 }
+
 
 
 /*
