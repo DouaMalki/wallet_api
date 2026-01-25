@@ -362,7 +362,6 @@ export async function markSurveyAsAnswered(req, res) {
 }
 
 
-/* Compute final trip rating */
 export async function computeTripRating(req, res) {
   const { plan_id, locationRatings = {}, selectedProblems = [] } = req.body;
 
@@ -375,7 +374,6 @@ export async function computeTripRating(req, res) {
   const PROBLEM_PENALTY = 0.2;
 
   try {
-    /* Get all locations in the trip */
     const locations = await sql`
       SELECT
         l.id,
@@ -390,53 +388,40 @@ export async function computeTripRating(req, res) {
       return res.status(400).json({ message: "No locations found" });
     }
 
-    /* DB locations ratings */
-    const totalDbRating = locations.reduce(
-      (sum, l) => sum + Number(l.db_rating),
-      0
-    );
-    const avgDbRating = totalDbRating / locations.length;
+    const avgDbRating =
+      locations.reduce((sum, l) => sum + Number(l.db_rating), 0) /
+      locations.length;
 
-    /* User locations ratings */
     let userRatingsSum = 0;
-    let ratedLocationsCount = 0;
+    let ratedCount = 0;
 
     for (const loc of locations) {
       if (locationRatings[loc.id]) {
         userRatingsSum += Number(locationRatings[loc.id]);
-        ratedLocationsCount++;
+        ratedCount++;
       }
     }
 
     const avgUserRating =
-      ratedLocationsCount > 0
-        ? userRatingsSum / ratedLocationsCount
-        : 0;
+      ratedCount > 0 ? userRatingsSum / ratedCount : 0;
 
-    /* Problems penalty */
     const penalty = selectedProblems.length * PROBLEM_PENALTY;
 
-    /* Final rating */
-    let finalTripRating =
+    let finalRating =
       avgDbRating * DB_WEIGHT +
       avgUserRating * USER_WEIGHT -
       penalty;
 
-    /* Clamp between 1 and 5 */
-    finalTripRating = Math.max(
-      1,
-      Math.min(5, Number(finalTripRating.toFixed(2)))
-    );
+    finalRating = Math.max(1, Math.min(5, Number(finalRating.toFixed(2))));
 
-    /* Save rating */
+    /* Save INITIAL rating only */
     await sql`
       UPDATE saved_trip_plans
-      SET rating = ${finalTripRating}
+      SET initial_rating = ${finalRating}
       WHERE id = ${plan_id}
     `;
 
-    res.status(200).json({ rating: finalTripRating });
-
+    res.json({ rating: finalRating });
   } catch (err) {
     console.error("Compute trip rating error:", err);
     res.status(500).json({ message: "Failed to compute trip rating" });
