@@ -361,7 +361,6 @@ export async function markSurveyAsAnswered(req, res) {
   }
 }
 
-
 export async function computeTripRating(req, res) {
   const { plan_id, locationRatings = {}, selectedProblems = [] } = req.body;
 

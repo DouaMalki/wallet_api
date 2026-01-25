@@ -12,18 +12,17 @@ export async function getPublishedTripPlans(req, res) {
         p.trip_type_slug,
         p.created_at,
 
-        /* Global rating */
+        /* Global rating (from users) */
         stats.rating,
         stats.total_ratings,
 
-        /* User rating (NULL if not logged in) */
+        /* User rating (NULL if guest) */
         ur.rating AS user_rating,
 
-        first_loc.location_id,
-        first_loc.location_name,
-        first_loc.photo_url,
-        first_loc.photo_reference,
-        first_loc.source
+        /* First location image ONLY */
+        first_img.photo_url,
+        first_img.photo_reference,
+        first_img.source
 
       FROM saved_trip_plans p
 
@@ -41,17 +40,17 @@ export async function getPublishedTripPlans(req, res) {
         ON ur.plan_id = p.id
        AND ur.user_id = ${user_id ?? null}
 
-      /* First location image */
+      /* First location IMAGE ONLY */
       LEFT JOIN LATERAL (
         SELECT
-          l.id AS location_id,
-          l.name AS location_name,
           lp.photo_url,
           lp.photo_reference,
           lp.source
         FROM saved_trip_plan_days d
-        JOIN saved_trip_plan_items i ON i.plan_day_id = d.id
-        JOIN locations l ON l.id = i.location_id
+        JOIN saved_trip_plan_items i
+          ON i.plan_day_id = d.id
+        JOIN locations l
+          ON l.id = i.location_id
         LEFT JOIN LATERAL (
           SELECT photo_url, photo_reference, source
           FROM location_photos
@@ -62,7 +61,7 @@ export async function getPublishedTripPlans(req, res) {
         WHERE d.plan_id = p.id
         ORDER BY d.day_key ASC, i.position ASC
         LIMIT 1
-      ) first_loc ON TRUE
+      ) first_img ON TRUE
 
       WHERE p.published = TRUE
       ORDER BY p.created_at DESC
@@ -71,22 +70,47 @@ export async function getPublishedTripPlans(req, res) {
     res.json(result);
   } catch (err) {
     console.error("Get published trip plans error:", err);
-    res.status(500).json({ message: "Failed to fetch published trip plans" });
+    res.status(500).json({
+      message: "Failed to fetch published trip plans",
+    });
   }
 }
 
+/*
+  Insert or update rating for a published trip plan
+  - First time → INSERT
+  - Next times → UPDATE
+*/
 export async function ratePublishedTripPlan(req, res) {
   const { plan_id, rating, user_id } = req.body;
 
   if (!plan_id || !rating || !user_id) {
-    return res.status(400).json({ message: "Missing data" });
+    return res.status(400).json({
+      message: "plan_id, rating and user_id are required",
+    });
   }
 
   if (rating < 1 || rating > 5) {
-    return res.status(400).json({ message: "Rating must be 1–5" });
+    return res.status(400).json({
+      message: "Rating must be between 1 and 5",
+    });
   }
 
   try {
+    /* Ensure plan is published */
+    const plan = await sql`
+      SELECT id
+      FROM saved_trip_plans
+      WHERE id = ${plan_id}
+        AND published = TRUE
+    `;
+
+    if (plan.length === 0) {
+      return res.status(404).json({
+        message: "Published trip plan not found",
+      });
+    }
+
     /* Insert or update user rating */
     await sql`
       INSERT INTO trip_plan_ratings (plan_id, user_id, rating)
@@ -97,7 +121,7 @@ export async function ratePublishedTripPlan(req, res) {
         updated_at = now()
     `;
 
-    /* Return updated global stats */
+    /* Compute updated global rating */
     const stats = await sql`
       SELECT
         ROUND(AVG(rating)::numeric, 2) AS rating,
@@ -106,12 +130,46 @@ export async function ratePublishedTripPlan(req, res) {
       WHERE plan_id = ${plan_id}
     `;
 
-    res.json(stats[0]);
+    res.status(200).json(stats[0]);
   } catch (err) {
     console.error("Rate published trip plan error:", err);
-    res.status(500).json({ message: "Failed to rate trip plan" });
+    res.status(500).json({
+      message: "Failed to rate published trip plan",
+    });
   }
 }
+
+
+/*
+  Get global rating and total_ratings for a trip plan
+*/
+export async function getTripPlanRating(req, res) {
+  const { plan_id } = req.query;
+
+  if (!plan_id) {
+    return res.status(400).json({
+      message: "Missing plan_id",
+    });
+  }
+
+  try {
+    const result = await sql`
+      SELECT
+        ROUND(AVG(rating)::numeric, 2) AS rating,
+        COUNT(*) AS total_ratings
+      FROM trip_plan_ratings
+      WHERE plan_id = ${plan_id}
+    `;
+
+    res.json(result[0]);
+  } catch (err) {
+    console.error("Get trip plan rating error:", err);
+    res.status(500).json({
+      message: "Failed to fetch trip plan rating",
+    });
+  }
+}
+
 
 
 /**
