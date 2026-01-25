@@ -28,11 +28,6 @@ if (process.env.NODE_ENV === "production") job.start();
 // middleware
 //app.use(rateLimiter);
 app.use(express.json());
-app.use((req, res, next) => {
-  console.log("REQ:", req.method, req.originalUrl);
-  next();
-});
-
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok" });
