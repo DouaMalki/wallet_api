@@ -89,7 +89,6 @@ async function getMissingCategorySlugsForCity(cityId, requiredSlugs) {
 }
 
 async function getPlacesNeedingGemini(cityId, googlePlaceIds) {
-    // لو أعطيتيني قائمة google_place_id من هالـ run: نفلتر عليها لتقليل
     if (!googlePlaceIds?.length) return new Set();
     const rows = await sql`
     SELECT google_place_id
@@ -99,12 +98,13 @@ async function getPlacesNeedingGemini(cityId, googlePlaceIds) {
       AND (
         estimated_time IS NULL OR
         max_cost IS NULL OR
-        recommended_for IS NULL OR
-        closed_days IS NULL
+        recommended_for IS NULL OR cardinality(recommended_for) = 0 OR
+        closed_days IS NULL OR cardinality(closed_days) = 0
       )
   `;
     return new Set(rows.map(r => r.google_place_id));
 }
+
 
 async function upsertLocation({
     city_id,
@@ -172,14 +172,28 @@ async function updateGeminiFields(googlePlaceId, enriched) {
     await sql`
     UPDATE public.locations
     SET
-      estimated_time  = COALESCE(public.locations.estimated_time, ${enriched.estimated_time_minutes}),
-      max_cost        = COALESCE(public.locations.max_cost, ${enriched.max_cost_ils}),
-      recommended_for = COALESCE(public.locations.recommended_for, ${enriched.recommended_for}),
-      closed_days     = COALESCE(public.locations.closed_days, ${enriched.closed_days}),
+      estimated_time = COALESCE(public.locations.estimated_time, ${enriched.estimated_time_minutes}),
+      max_cost       = COALESCE(public.locations.max_cost, ${enriched.max_cost_ils}),
+
+      recommended_for = CASE
+        WHEN public.locations.recommended_for IS NULL
+          OR cardinality(public.locations.recommended_for) = 0
+        THEN ${enriched.recommended_for}
+        ELSE public.locations.recommended_for
+      END,
+
+      closed_days = CASE
+        WHEN public.locations.closed_days IS NULL
+          OR cardinality(public.locations.closed_days) = 0
+        THEN ${enriched.closed_days}
+        ELSE public.locations.closed_days
+      END,
+
       updated_at = now()
     WHERE google_place_id = ${googlePlaceId}
   `;
 }
+
 
 /* =========================
    Google Places helpers (same as your script)
