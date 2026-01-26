@@ -15,7 +15,7 @@ export async function getPublishedTripPlans(req, res) {
         p.end_date,
         p.number_of_seens,
 
-        /* ✅ Total days (inclusive) */
+        /* Total days (inclusive) */
         (p.end_date - p.start_date + 1) AS total_days,
 
         /* Global rating (from users) */
