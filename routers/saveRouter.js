@@ -4,7 +4,7 @@ import {
   unsaveLocation,
   getSavedLocations,
   isLocationSaved,
-  getSavedTripPlansByUserId,
+  getSavedTripPlans,
 } from "../controllers/saveController.js";
 
 import { requireAuth } from "../middleware/firebaseAuthMiddleware.js";
@@ -18,7 +18,7 @@ router.get("/", requireAuth, getSavedLocations);
 router.post("/:locationId", requireAuth, saveLocation);
 router.delete("/:locationId", requireAuth, unsaveLocation);
 router.get("/check/:locationId", requireAuth, isLocationSaved);
-router.get("/saved-trip-plans/:userId", requireAuth, getSavedTripPlansByUserId);
+router.get("/saved-trip-plans", requireAuth, getSavedTripPlans);
 
 
 
