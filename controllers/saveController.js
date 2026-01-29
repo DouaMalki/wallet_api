@@ -161,14 +161,22 @@ export async function isLocationSaved(req, res) {
   }
 }
 
-// GET /api/saved-trip-plans
-export async function getSavedTripPlans(req, res) {
+// GET /api/saved-trip-plans/:userId
+export async function getSavedTripPlansByUserId(req, res) {
   try {
-    const userId = getAuthUserId(req);
+    const authUserId = getAuthUserId(req);        // from requireAuth middleware
+    const paramUserId = Number(req.params.userId);
 
-    if (!userId) {
+    if (!authUserId) {
       return res.status(401).json({
         message: "You need to have an account to view saved trip plans.",
+      });
+    }
+
+    // 🔒 SECURITY CHECK: user can only access their own plans
+    if (authUserId !== paramUserId) {
+      return res.status(403).json({
+        message: "You are not allowed to access this user's saved trip plans.",
       });
     }
 
@@ -197,14 +205,15 @@ export async function getSavedTripPlans(req, res) {
         confirmed,
         number_of_seens
       FROM saved_trip_plans
-      WHERE user_id = ${userId}
+      WHERE user_id = ${paramUserId}
         AND saved = true
       ORDER BY created_at DESC
     `;
 
     return res.status(200).json({ saved_trip_plans: plans });
+
   } catch (err) {
-    console.error("getSavedTripPlans error:", err);
+    console.error("getSavedTripPlansByUserId error:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 }
