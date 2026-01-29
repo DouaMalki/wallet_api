@@ -161,7 +161,7 @@ export async function isLocationSaved(req, res) {
   }
 }
 
-// GET /api/saved-trip-plans //work
+// GET /api/saved-trip-plans
 export async function getSavedTripPlans(req, res) {
   try {
     const userId = getAuthUserId(req);
@@ -169,37 +169,39 @@ export async function getSavedTripPlans(req, res) {
 
     const rows = await sql`
       SELECT
-        stp.id,
-        stp.city_id,
-        stp.trip_type_slug,
-        stp.title,
-        stp.audience_tag,
-        stp.transport_type,
-        stp.budget_max,
-        stp.start_date,
-        stp.end_date,
-        stp.trip_start_time,
-        stp.trip_end_time,
-        stp.trip_day_times,
-        stp.places_per_day,
-        stp.selected_nights,
-        stp.answered_survey,
-        stp.published,
-        stp.created_at,
-        stp.updated_at,
-        stp.saved,
-        stp.confirmed,
-        stp.number_of_seens
-      FROM saved_trip_plans stp
-      WHERE stp.user_id = ${userId}
-        AND stp.saved = true
-      ORDER BY stp.created_at DESC
+        id,
+        user_id,
+        city_id,
+        trip_type_slug,
+        title,
+        audience_tag,
+        transport_type,
+        budget_max,
+        start_date,
+        end_date,
+        trip_start_time,
+        trip_end_time,
+        created_at,
+        updated_at,
+        saved,
+        confirmed,
+        number_of_seens
+      FROM saved_trip_plans
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
     `;
 
-    return res.status(200).json({ saved_trip_plans: rows });
+    // If you ONLY want saved=true, filter in code for now:
+    const onlySaved = rows.filter((p) => p.saved === true);
+
+    return res.status(200).json({ saved_trip_plans: onlySaved });
   } catch (err) {
     console.error("getSavedTripPlans error:", err);
-    return res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message, // TEMP remove later
+    });
   }
 }
+
 
