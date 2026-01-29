@@ -160,3 +160,51 @@ export async function isLocationSaved(req, res) {
     return res.status(500).json({ message: "Internal server error" });
   }
 }
+
+// GET /api/saved-trip-plans
+export async function getSavedTripPlans(req, res) {
+  try {
+    const userId = getAuthUserId(req);
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "You need to have an account to view saved trip plans.",
+      });
+    }
+
+    const plans = await sql`
+      SELECT
+        id,
+        user_id,
+        city_id,
+        trip_type_slug,
+        title,
+        audience_tag,
+        transport_type,
+        budget_max,
+        start_date,
+        end_date,
+        trip_start_time,
+        trip_end_time,
+        trip_day_times,
+        places_per_day,
+        selected_nights,
+        answered_survey,
+        published,
+        created_at,
+        updated_at,
+        saved,
+        confirmed,
+        number_of_seens
+      FROM saved_trip_plans
+      WHERE user_id = ${userId}
+        AND saved = true
+      ORDER BY created_at DESC
+    `;
+
+    return res.status(200).json({ saved_trip_plans: plans });
+  } catch (err) {
+    console.error("getSavedTripPlans error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
