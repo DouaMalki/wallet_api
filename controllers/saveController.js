@@ -161,7 +161,7 @@ export async function isLocationSaved(req, res) {
   }
 }
 
-// GET /api/saved-trip-plans
+// GET /api/saved-trip-plans //work
 export async function getSavedTripPlans(req, res) {
   try {
     const userId = getAuthUserId(req);
