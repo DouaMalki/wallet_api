@@ -20,6 +20,7 @@ import browseRouter from "./routers/browseRouter.js";
 import photosRouter from "./routers/photosRouter.js";
 import saveTripPlanRouter from "./routers/saveTripPlanRouter.js";
 import homeRouter from "./routers/homeRouter.js";
+import savedTripPlansRouter from "./routers/savedTripPlansRouter.js";
 
 
 const app = express();
@@ -49,6 +50,8 @@ app.use("/api/users", usersRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/browse", browseRouter);
 app.use("/api/saved-locations", saveRouter);
+app.use("/api/saved-trip-plans", savedTripPlansRouter);
+
 
 
 // routers created by shahd
