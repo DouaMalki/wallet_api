@@ -161,7 +161,7 @@ export async function isLocationSaved(req, res) {
   }
 }
 
-// GET /api/saved-trip-plans
+/** GET /api/saved-trip-plans  (plans bookmarked from Home) */
 export async function getSavedTripPlans(req, res) {
   try {
     const userId = getAuthUserId(req);
@@ -169,38 +169,43 @@ export async function getSavedTripPlans(req, res) {
 
     const rows = await sql`
       SELECT
-        id,
-        user_id,
-        city_id,
-        trip_type_slug,
-        title,
-        audience_tag,
-        transport_type,
-        budget_max,
-        start_date,
-        end_date,
-        trip_start_time,
-        trip_end_time,
-        created_at,
-        updated_at,
-        saved,
-        confirmed,
-        number_of_seens
+        id, city_id, trip_type_slug, title,
+        audience_tag, transport_type, budget_max,
+        start_date, end_date, trip_start_time, trip_end_time,
+        created_at, updated_at, saved, confirmed
       FROM saved_trip_plans
-      WHERE user_id = ${userId}
+      WHERE user_id = ${userId} AND saved = true
       ORDER BY created_at DESC
     `;
 
-    // If you ONLY want saved=true, filter in code for now:
-    const onlySaved = rows.filter((p) => p.saved === true);
-
-    return res.status(200).json({ saved_trip_plans: onlySaved });
+    return res.status(200).json({ saved_trip_plans: rows });
   } catch (err) {
     console.error("getSavedTripPlans error:", err);
-    return res.status(500).json({
-      message: "Internal server error",
-      error: err.message, // TEMP remove later
-    });
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/** GET /api/confirmed-trip-plans (plans created & confirmed by the user) */
+export async function getConfirmedTripPlans(req, res) {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const rows = await sql`
+      SELECT
+        id, city_id, trip_type_slug, title,
+        audience_tag, transport_type, budget_max,
+        start_date, end_date, trip_start_time, trip_end_time,
+        created_at, updated_at, saved, confirmed
+      FROM saved_trip_plans
+      WHERE user_id = ${userId} AND confirmed = true
+      ORDER BY created_at DESC
+    `;
+
+    return res.status(200).json({ confirmed_trip_plans: rows });
+  } catch (err) {
+    console.error("getConfirmedTripPlans error:", err);
+    return res.status(500).json({ message: "Internal server error" });
   }
 }
 

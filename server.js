@@ -21,7 +21,7 @@ import photosRouter from "./routers/photosRouter.js";
 import saveTripPlanRouter from "./routers/saveTripPlanRouter.js";
 import homeRouter from "./routers/homeRouter.js";
 import savedTripPlansRouter from "./routers/savedTripPlansRouter.js";
-
+import confirmedTripPlansRouter from "./routers/confirmedTripPlansRouter.js";
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
@@ -51,6 +51,7 @@ app.use("/api/admin", adminRouter);
 app.use("/api/browse", browseRouter);
 app.use("/api/saved-locations", saveRouter);
 app.use("/api/saved-trip-plans", savedTripPlansRouter);
+app.use("/api/confirmed-trip-plans", confirmedTripPlansRouter);
 
 
 
