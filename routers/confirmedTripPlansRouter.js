@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.get("/", requireAuth, getConfirmedTripPlans);
 router.post("/", requireAuth, (req, res, next) => {
-  console.log("✅ HIT POST /api/confirmed-trip-plans");
+  console.log("✅HIT confirm router POST /api/confirmed-trip-plans");
   next();
 }, confirmTripPlan); 
 

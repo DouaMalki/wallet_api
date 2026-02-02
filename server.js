@@ -34,6 +34,12 @@ app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+app.use((req, res, next) => {
+  console.log("➡️ REQ:", req.method, req.originalUrl);
+  next();
+});
+
+
 
 
 
@@ -89,5 +95,15 @@ initDB().then(() => {
     console.log("Server is up and running on PORT:", PORT);
   });
 });
+
+app.use((req, res) => {
+  console.log("❌ NO ROUTE MATCHED:", req.method, req.originalUrl);
+  res.status(404).json({
+    message: "Route not found",
+    method: req.method,
+    url: req.originalUrl,
+  });
+});
+
 
 
