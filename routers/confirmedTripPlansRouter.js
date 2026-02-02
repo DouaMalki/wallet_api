@@ -5,7 +5,10 @@ import { getConfirmedTripPlans, confirmTripPlan } from "../controllers/saveContr
 const router = express.Router();
 
 router.get("/", requireAuth, getConfirmedTripPlans);
-router.post("/", requireAuth, confirmTripPlan); 
+router.post("/", requireAuth, (req, res, next) => {
+  console.log("✅ HIT POST /api/confirmed-trip-plans");
+  next();
+}, confirmTripPlan); 
 
 
 export default router;
