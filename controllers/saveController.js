@@ -1,4 +1,5 @@
 import { sql } from "../config/db.js";
+import { createTripPlan } from "../repositories/savedTripPlansRepo.js";
 
 function getAuthUserId(req) {
   return req.user?.user_id ?? req.user?.id ?? req.userId ?? null;
@@ -208,5 +209,56 @@ export async function getConfirmedTripPlans(req, res) {
     return res.status(500).json({ message: "Internal server error" });
   }
 }
+
+// POST /api/saved-trip-plans
+export async function saveTripPlan(req, res) {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const { title, tripRequest, finalPlan, answeredSurvey, published } = req.body;
+
+    const result = await createTripPlan({
+      userId,
+      title,
+      answeredSurvey,
+      published,
+      tripRequest,
+      finalPlan,
+      mode: "saved",
+    });
+
+    return res.status(201).json({ message: "Trip plan saved", id: result.planId });
+  } catch (err) {
+    console.error("saveTripPlan error:", err);
+    return res.status(500).json({ message: err.message || "Internal server error" });
+  }
+}
+
+// POST /api/confirmed-trip-plans
+export async function confirmTripPlan(req, res) {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const { title, tripRequest, finalPlan, answeredSurvey, published } = req.body;
+
+    const result = await createTripPlan({
+      userId,
+      title,
+      answeredSurvey,
+      published,
+      tripRequest,
+      finalPlan,
+      mode: "confirmed",
+    });
+
+    return res.status(201).json({ message: "Trip plan confirmed", id: result.planId });
+  } catch (err) {
+    console.error("confirmTripPlan error:", err);
+    return res.status(500).json({ message: err.message || "Internal server error" });
+  }
+}
+
 
 
