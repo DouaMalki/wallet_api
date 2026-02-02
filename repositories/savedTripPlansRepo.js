@@ -160,8 +160,8 @@ function minutesToTime(mins) {
 }
 
 
-
-export async function createSavedTripPlan({
+// it was createSavedTripPlan
+export async function createTripPlan({
     userId,
     title,
     answeredSurvey = false,

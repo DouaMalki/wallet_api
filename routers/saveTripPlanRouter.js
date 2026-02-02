@@ -1,7 +1,7 @@
 // wallet_api/routers/saveTripPlanRouter.js
 import express from "express";
 import { requireAuth } from "../middleware/firebaseAuthMiddleware.js";
-import { createSavedTripPlan } from "../repositories/savedTripPlansRepo.js";
+import { createTripPlan } from "../repositories/savedTripPlansRepo.js";
 
 const router = express.Router();
 
@@ -30,7 +30,7 @@ router.post("/", requireAuth, async (req, res) => {
             finalPlan,
         } = req.body || {};
 
-        const out = await createSavedTripPlan({
+        const out = await createTripPlan({
             userId,
             title,
             answeredSurvey,
