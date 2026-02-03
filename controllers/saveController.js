@@ -430,6 +430,59 @@ export async function getTripPlanDetails(req, res) {
   }
 }
 
+// PATCH /api/saved-trip-plans/:planId/unsave
+export async function unsaveTripPlan(req, res) {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const planId = req.params.planId;
+
+    const updated = await sql`
+      UPDATE saved_trip_plans
+      SET saved = false, updated_at = NOW()
+      WHERE id = ${planId} AND user_id = ${userId} AND saved = true
+      RETURNING id
+    `;
+
+    if (!updated.length) {
+      return res.status(404).json({ message: "Saved plan not found" });
+    }
+
+    return res.status(200).json({ message: "Plan unsaved successfully" });
+  } catch (err) {
+    console.error("unsaveTripPlan error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+// DELETE /api/confirmed-trip-plans/:planId
+export async function deleteConfirmedTripPlan(req, res) {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const planId = req.params.planId;
+
+    // only allow deleting confirmed plans
+    const deleted = await sql`
+      DELETE FROM saved_trip_plans
+      WHERE id = ${planId} AND user_id = ${userId} AND confirmed = true
+      RETURNING id
+    `;
+
+    if (!deleted.length) {
+      return res.status(404).json({ message: "Confirmed plan not found" });
+    }
+
+    return res.status(200).json({ message: "Confirmed plan deleted successfully" });
+  } catch (err) {
+    console.error("deleteConfirmedTripPlan error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+
 
 
 
