@@ -318,5 +318,118 @@ export async function confirmTripPlan(req, res) {
   }
 }
 
+// GET /api/trip-plans/:planId
+export async function getTripPlanDetails(req, res) {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const planId = req.params.planId;
+
+    // 1) Make sure this plan belongs to this user
+    const planRows = await sql`
+      SELECT
+        id,
+        user_id,
+        title,
+        city_id,
+        trip_type_slug,
+        start_date,
+        end_date,
+        trip_start_time,
+        trip_end_time,
+        saved,
+        confirmed
+      FROM saved_trip_plans
+      WHERE id = ${planId} AND user_id = ${userId}
+      LIMIT 1
+    `;
+
+    if (!planRows.length) {
+      return res.status(404).json({ message: "Plan not found" });
+    }
+
+    const plan = planRows[0];
+
+    // 2) Get days + items + location details (+ one photo)
+    const rows = await sql`
+      SELECT
+        d.id AS day_id,
+        d.day_key,
+        d.polyline,
+        d.distance_text,
+        d.duration_text,
+        d.leg_durations_min,
+
+        i.position,
+        i.location_id,
+        i.start_time,
+        i.end_time,
+        i.duration_min,
+
+        l.name,
+        l.lat,
+        l.lng,
+        l.google_place_id,
+
+        lp.source AS photo_source,
+        lp.photo_url,
+        lp.photo_reference
+      FROM saved_trip_plan_days d
+      JOIN saved_trip_plan_items i ON i.plan_day_id = d.id
+      JOIN locations l ON l.id = i.location_id
+      LEFT JOIN LATERAL (
+        SELECT source, photo_url, photo_reference
+        FROM location_photos
+        WHERE location_id = l.id
+        ORDER BY is_primary DESC, created_at DESC
+        LIMIT 1
+      ) lp ON TRUE
+      WHERE d.plan_id = ${planId}
+      ORDER BY d.day_key ASC, i.position ASC
+    `;
+
+    // 3) Group by day
+    const daysMap = {};
+    for (const r of rows) {
+      if (!daysMap[r.day_id]) {
+        daysMap[r.day_id] = {
+          day_id: r.day_id,
+          day_key: r.day_key,
+          polyline: r.polyline || "",
+          distance_text: r.distance_text || "",
+          duration_text: r.duration_text || "",
+          leg_durations_min: r.leg_durations_min || [],
+          places: [],
+        };
+      }
+
+      daysMap[r.day_id].places.push({
+        position: r.position,
+        location_id: r.location_id,
+        name: r.name,
+        lat: r.lat,
+        lng: r.lng,
+        google_place_id: r.google_place_id,
+        start_time: r.start_time,
+        end_time: r.end_time,
+        duration_min: r.duration_min,
+        photo_source: r.photo_source,
+        photo_url: r.photo_url,
+        photo_reference: r.photo_reference,
+      });
+    }
+
+    return res.status(200).json({
+      plan,
+      days: Object.values(daysMap),
+    });
+  } catch (err) {
+    console.error("getTripPlanDetails error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+
 
 
