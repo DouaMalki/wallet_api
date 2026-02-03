@@ -170,13 +170,42 @@ export async function getSavedTripPlans(req, res) {
 
     const rows = await sql`
       SELECT
-        id, city_id, trip_type_slug, title,
-        audience_tag, transport_type, budget_max,
-        start_date, end_date, trip_start_time, trip_end_time,
-        created_at, updated_at, saved, confirmed
-      FROM saved_trip_plans
-      WHERE user_id = ${userId} AND saved = true
-      ORDER BY created_at DESC
+        stp.id, stp.city_id, stp.trip_type_slug, stp.title,
+        stp.audience_tag, stp.transport_type, stp.budget_max,
+        stp.start_date, stp.end_date, stp.trip_start_time, stp.trip_end_time,
+        stp.created_at, stp.updated_at, stp.saved, stp.confirmed,
+
+        -- Cover photo from first location in the plan
+        cover.photo_url AS cover_photo_url,
+        cover.photo_reference AS cover_photo_reference
+
+      FROM saved_trip_plans stp
+
+      LEFT JOIN LATERAL (
+        SELECT
+          lp.photo_url,
+          lp.photo_reference
+        FROM saved_trip_plan_days d
+        JOIN saved_trip_plan_items i
+          ON i.plan_day_id = d.id
+
+        LEFT JOIN LATERAL (
+          SELECT photo_url, photo_reference
+          FROM location_photos
+          WHERE location_id = i.location_id
+          ORDER BY is_primary DESC, created_at DESC
+          LIMIT 1
+        ) lp ON TRUE
+
+        WHERE d.plan_id = stp.id
+        ORDER BY d.day_key ASC, i.position ASC
+        LIMIT 1
+      ) cover ON TRUE
+
+      WHERE stp.user_id = ${userId}
+        AND stp.saved = true
+
+      ORDER BY stp.created_at DESC
     `;
 
     return res.status(200).json({ saved_trip_plans: rows });
@@ -194,13 +223,42 @@ export async function getConfirmedTripPlans(req, res) {
 
     const rows = await sql`
       SELECT
-        id, city_id, trip_type_slug, title,
-        audience_tag, transport_type, budget_max,
-        start_date, end_date, trip_start_time, trip_end_time,
-        created_at, updated_at, saved, confirmed
-      FROM saved_trip_plans
-      WHERE user_id = ${userId} AND confirmed = true
-      ORDER BY created_at DESC
+        stp.id, stp.city_id, stp.trip_type_slug, stp.title,
+        stp.audience_tag, stp.transport_type, stp.budget_max,
+        stp.start_date, stp.end_date, stp.trip_start_time, stp.trip_end_time,
+        stp.created_at, stp.updated_at, stp.saved, stp.confirmed,
+
+        -- Cover photo from first location in the plan
+        cover.photo_url AS cover_photo_url,
+        cover.photo_reference AS cover_photo_reference
+
+      FROM saved_trip_plans stp
+
+      LEFT JOIN LATERAL (
+        SELECT
+          lp.photo_url,
+          lp.photo_reference
+        FROM saved_trip_plan_days d
+        JOIN saved_trip_plan_items i
+          ON i.plan_day_id = d.id
+
+        LEFT JOIN LATERAL (
+          SELECT photo_url, photo_reference
+          FROM location_photos
+          WHERE location_id = i.location_id
+          ORDER BY is_primary DESC, created_at DESC
+          LIMIT 1
+        ) lp ON TRUE
+
+        WHERE d.plan_id = stp.id
+        ORDER BY d.day_key ASC, i.position ASC
+        LIMIT 1
+      ) cover ON TRUE
+
+      WHERE stp.user_id = ${userId}
+        AND stp.confirmed = true
+
+      ORDER BY stp.created_at DESC
     `;
 
     return res.status(200).json({ confirmed_trip_plans: rows });
