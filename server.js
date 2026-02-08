@@ -20,7 +20,9 @@ import browseRouter from "./routers/browseRouter.js";
 import photosRouter from "./routers/photosRouter.js";
 import saveTripPlanRouter from "./routers/saveTripPlanRouter.js";
 import homeRouter from "./routers/homeRouter.js";
-
+import savedTripPlansRouter from "./routers/savedTripPlansRouter.js";
+import confirmedTripPlansRouter from "./routers/confirmedTripPlansRouter.js";
+import tripPlansRouter from "./routers/tripPlansRouter.js";
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
@@ -32,6 +34,12 @@ app.use(express.json());
 app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
+
+app.use((req, res, next) => {
+  console.log("➡️ REQ:", req.method, req.originalUrl);
+  next();
+});
+
 
 
 
@@ -49,6 +57,9 @@ app.use("/api/users", usersRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/browse", browseRouter);
 app.use("/api/saved-locations", saveRouter);
+app.use("/api/saved-trip-plans", savedTripPlansRouter);
+app.use("/api/confirmed-trip-plans", confirmedTripPlansRouter);
+app.use("/api/trip-plans", tripPlansRouter);
 
 
 // routers created by shahd
@@ -59,6 +70,20 @@ app.use("/api/trip_type_rules", tripTypeRulesRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/photos", photosRouter);
 app.use("/api/saved_trip_plans", saveTripPlanRouter);
+
+console.log("=== ROUTES ===");
+app._router.stack.forEach((r) => {
+  if (r.route) {
+    console.log(Object.keys(r.route.methods).join(","), r.route.path);
+  } else if (r.name === "router") {
+    r.handle.stack.forEach((rr) => {
+      if (rr.route) {
+        console.log(Object.keys(rr.route.methods).join(","), rr.route.path);
+      }
+    });
+  }
+});
+console.log("==============");
 
 
 
@@ -71,5 +96,15 @@ initDB().then(() => {
     console.log("Server is up and running on PORT:", PORT);
   });
 });
+
+app.use((req, res) => {
+  console.log("❌ NO ROUTE MATCHED:", req.method, req.originalUrl);
+  res.status(404).json({
+    message: "Route not found",
+    method: req.method,
+    url: req.originalUrl,
+  });
+});
+
 
 

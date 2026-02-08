@@ -160,18 +160,27 @@ function minutesToTime(mins) {
 }
 
 
-
-export async function createSavedTripPlan({
+// it was createSavedTripPlan
+export async function createTripPlan({
     userId,
     title,
     answeredSurvey = false,
     published = false,
     tripRequest,
     finalPlan,
+    // NEW: "saved" | "confirmed"
+    mode = "saved",
 }) {
     if (!userId) throw new Error("Missing userId");
     if (!tripRequest) throw new Error("Missing tripRequest");
     if (!finalPlan) throw new Error("Missing finalPlan");
+
+    const isSaved = mode === "saved";
+    const isConfirmed = mode === "confirmed";
+
+    if (!isSaved && !isConfirmed) {
+        throw new Error('Invalid mode. Use "saved" or "confirmed"');
+    }
 
     // ---- map tripRequest -> saved_trip_plans columns ----
     const cityId = tripRequest.destinationId;   // text NOT NULL
@@ -244,8 +253,8 @@ export async function createSavedTripPlan({
       ${JSON.stringify(selectedNights)}::jsonb,
       ${answeredSurvey},
       ${published},
-      ${true},
-      ${false},
+      ${isSaved},
+      ${isConfirmed},
       NOW(),
       NOW()
     )
@@ -422,5 +431,5 @@ export async function createSavedTripPlan({
         }
     }
 
-    return { planId };
+    return { planId, mode }; 
 }
