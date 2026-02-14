@@ -1,4 +1,3 @@
-// wallet_api/services/seedCityService.js
 import { sql } from "../config/db.js";
 
 const GOOGLE_KEY = process.env.GOOGLE_MAPS_API_KEY;
@@ -8,9 +7,8 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 if (!GOOGLE_KEY) throw new Error("Missing env GOOGLE_MAPS_API_KEY");
 if (!GEMINI_KEY) throw new Error("Missing env GEMINI_API_KEY");
 
-/* =========================
-   Small helpers
-   ========================= */
+///////helpers///////
+//  divid the array into small groups (e.g., 15 items at a time) because Gemini works best in batches, and there is a limit/cost/rate limit.
 function chunk(arr, size) {
     const out = [];
     for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -20,9 +18,8 @@ function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
 
-/* =========================
-   DB helpers
-   ========================= */
+///////DB helpers ///////
+//retrieve city data from the cities table.
 async function getCityOrThrow(cityId) {
     const rows = await sql`
     SELECT id, name, center_lat, center_lng
@@ -88,6 +85,7 @@ async function getMissingCategorySlugsForCity(cityId, requiredSlugs) {
     return missing;
 }
 
+//The function returns a Set with the google_place_id that we need to enrichment. We used Set for a quick search: needSet.has(id).
 async function getPlacesNeedingGemini(cityId, googlePlaceIds) {
     if (!googlePlaceIds?.length) return new Set();
     const rows = await sql`
@@ -194,10 +192,7 @@ async function updateGeminiFields(googlePlaceId, enriched) {
   `;
 }
 
-
-/* =========================
-   Google Places helpers (same as your script)
-   ========================= */
+///////Google Places helpers (same as your script)///////
 async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20, radius = 8000 }) {
     const url = "https://places.googleapis.com/v1/places:searchNearby";
     const body = {
@@ -259,10 +254,7 @@ function pickBestCategoryIdForPlace({ placeTypes, primaryType }, categories) {
     }
     return null;
 }
-
-/* =========================
-   Gemini helper (as-is) + retry 429
-   ========================= */
+/////// Gemini helper (as-is) + retry 429///////
 async function geminiEnrich(batch, cityName, attempt = 1) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
         GEMINI_MODEL
@@ -353,9 +345,7 @@ ${JSON.stringify(compactPlaces, null, 2)}
     return JSON.parse(text);
 }
 
-/* =========================
-   Public API: seed on demand
-   ========================= */
+///////  Public API: seed on demand ///////
 export async function seedCityOnDemand({
     cityId,
     tripTypeSlug = null,
@@ -364,6 +354,11 @@ export async function seedCityOnDemand({
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
+    const tSearch0 = Date.now();
+    let searchCalls = 0;
+    let detailsTotalMs = 0;
+    let detailsCalls = 0;
+
     const city = await getCityOrThrow(cityId);
 
     // determine slugs
@@ -389,7 +384,7 @@ export async function seedCityOnDemand({
         const includedTypes = (cat.google_types || []).map(String);
         if (!includedTypes.length) continue;
 
-        const minNeed = Number(cat.min_results_per_city ?? 20);
+        const minNeed = Number(cat.min_results_per_city ?? 10);
         const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
 
         const resp = await placesSearchNearby({
@@ -399,6 +394,7 @@ export async function seedCityOnDemand({
             maxResultCount: Math.min(20, maxThisCategory),
             radius: radiusMeters,
         });
+        searchCalls++;
 
         const places = resp?.places || [];
 
@@ -408,7 +404,12 @@ export async function seedCityOnDemand({
             const placeId = p.id;
             if (!placeId) continue;
 
+            const tD0 = Date.now();
             const d = await placesGetDetails(placeId);
+            const tD1 = Date.now();
+
+            detailsTotalMs += (tD1 - tD0);
+            detailsCalls += 1;
 
             const name = d?.displayName?.text || p?.displayName?.text || null;
             const lat = d?.location?.latitude ?? p?.location?.latitude ?? null;
@@ -456,6 +457,9 @@ export async function seedCityOnDemand({
             totalImported += 1;
         }
     }
+    const tSearch1 = Date.now();
+    console.log(`[TIMING] placesSearchNearby total: ${tSearch1 - tSearch0} ms`, { searchCalls });
+    console.log(`[TIMING] placesGetDetails total: ${detailsTotalMs} ms`, { detailsCalls, avgMs: detailsCalls ? Math.round(detailsTotalMs / detailsCalls) : 0 });
 
     // Gemini only for ones needing it
     const googleIds = placesForGemini.map(p => p.google_place_id);
@@ -463,8 +467,13 @@ export async function seedCityOnDemand({
     const filteredForGemini = placesForGemini.filter(p => needSet.has(p.google_place_id));
 
     let geminiEnriched = 0;
+    let geminiTotalMs = 0;
+    let geminiBatches = 0;
     for (const group of chunk(filteredForGemini, batchSize)) {
+        const tG0 = Date.now();
         const out = await geminiEnrich(group, city.name);
+        const tG1 = Date.now();
+
         const results = out?.results || [];
         const map = new Map(results.map((r) => [r.google_place_id, r]));
 
@@ -475,13 +484,12 @@ export async function seedCityOnDemand({
         }
         geminiEnriched += group.length;
     }
+    console.log(`[TIMING] geminiEnrich total: ${geminiTotalMs} ms`, { geminiBatches, batchSize });
 
     return { imported: totalImported, geminiEnriched, categories: slugs };
 }
 
-/* =========================
-   Public API: ensure (called by controller)
-   ========================= */
+///////Public API: ensure (called by controller)///////
 export async function ensureLocationsForTripType({
     cityId,
     tripTypeSlug,
@@ -489,6 +497,9 @@ export async function ensureLocationsForTripType({
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
+
+    const tEnsure0 = Date.now();
+
     if (!cityId || !tripTypeSlug) return { didSeed: false, reason: "missing params" };
 
     const safeTripType = String(tripTypeSlug).toLowerCase().trim();
@@ -513,7 +524,6 @@ export async function ensureLocationsForTripType({
     // OPTIONAL: prevent parallel seeds for same city+tripType using advisory lock
     // If you want: SELECT pg_try_advisory_lock(hashtext(...))
     // For now: do seed directly
-
     try {
         const stats = await seedCityOnDemand({
             cityId,
@@ -523,10 +533,11 @@ export async function ensureLocationsForTripType({
             maxTotalPlaces,
             batchSize,
         });
-
         return { didSeed: true, missing, stats };
     } finally {
         // Ensure unlock even if seed fails
         await sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`;
+        const tEnsure1 = Date.now(); // ✅ END ensure
+        console.log(`[TIMING] ensureLocationsForTripType total: ${tEnsure1 - tEnsure0} ms`, { cityId, tripTypeSlug, missingCount: missing?.length });
     }
 }
