@@ -18,11 +18,74 @@ function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
 
+// meters -> lat/lng delta helpers (approx)
+function metersToLatDelta(m) {
+    return m / 111320; // ~ meters per degree latitude
+}
+function metersToLngDelta(m, atLat) {
+    const latRad = (Number(atLat) * Math.PI) / 180;
+    return m / (111320 * Math.cos(latRad));
+}
+
+// quick distance (meters) using haversine
+function haversineMeters(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const toRad = (x) => (Number(x) * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * Build grid points around city center:
+ * - stepMeters: spacing between grid points
+ * - jitterRatio: adds random offset up to (stepMeters * jitterRatio)
+ */
+function buildJitterPoints({
+    centerLat,
+    centerLng,
+    radiusMeters,
+    stepMeters,
+    jitterRatio = 0.35,
+    maxPoints = 25,
+}) {
+    const points = [];
+    const steps = [];
+    for (let d = -radiusMeters; d <= radiusMeters; d += stepMeters) steps.push(d);
+
+    // always include center
+    points.push({ lat: centerLat, lng: centerLng });
+
+    for (const dy of steps) {
+        for (const dx of steps) {
+            if (dx === 0 && dy === 0) continue;
+
+            // keep roughly within circle-ish
+            if (Math.sqrt(dx * dx + dy * dy) > radiusMeters * 1.05) continue;
+
+            const j = stepMeters * jitterRatio;
+            const jx = (Math.random() * 2 - 1) * j;
+            const jy = (Math.random() * 2 - 1) * j;
+
+            const lat = centerLat + metersToLatDelta(dy + jy);
+            const lng = centerLng + metersToLngDelta(dx + jx, centerLat);
+
+            points.push({ lat, lng });
+
+            if (points.length >= maxPoints) return points;
+        }
+    }
+    return points;
+}
+
 ///////DB helpers ///////
 //retrieve city data from the cities table.
 async function getCityOrThrow(cityId) {
     const rows = await sql`
-    SELECT id, name, center_lat, center_lng
+    SELECT id, name, name_ar, center_lat, center_lng
     FROM public.cities
     WHERE id = ${cityId}
     LIMIT 1
@@ -255,7 +318,8 @@ function pickBestCategoryIdForPlace({ placeTypes, primaryType }, categories) {
     return null;
 }
 /////// Gemini helper (as-is) + retry 429///////
-async function geminiEnrich(batch, cityName, attempt = 1) {
+async function geminiEnrich(batch, cityName, cityNameAr = null, attempt = 1) {
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
         GEMINI_MODEL
     )}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`;
@@ -301,7 +365,8 @@ async function geminiEnrich(batch, cityName, attempt = 1) {
 
     const prompt = `
 You are enriching travel POIs for a trip-planner app.
-City: ${cityName}
+City (EN): ${cityName}
+City (AR): ${cityNameAr || "N/A"}
 For each place, return best-effort estimates:
 - estimated_time_minutes
 - max_cost_ils
@@ -312,6 +377,7 @@ IMPORTANT: Output must follow the provided JSON schema exactly.
 Places:
 ${JSON.stringify(compactPlaces, null, 2)}
 `.trim();
+
 
     const body = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -334,7 +400,8 @@ ${JSON.stringify(compactPlaces, null, 2)}
             if (attempt >= 5) throw new Error("Gemini 429 persisted after 5 retries. Stop.");
             const waitMs = 30000 * attempt;
             await sleep(waitMs);
-            return geminiEnrich(batch, cityName, attempt + 1);
+            return geminiEnrich(batch, cityName, cityNameAr, attempt + 1);
+
         }
         throw new Error(`Gemini generateContent failed: ${res.status} ${t}`);
     }
@@ -350,7 +417,9 @@ export async function seedCityOnDemand({
     cityId,
     tripTypeSlug = null,
     categoriesSlugs = null,
-    radiusMeters = 8000,
+    radiusMeters = 3000,
+    stepMeters = 1500,
+    maxPoints = 21,
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
@@ -360,6 +429,19 @@ export async function seedCityOnDemand({
     let detailsCalls = 0;
 
     const city = await getCityOrThrow(cityId);
+
+    const points = buildJitterPoints({
+        centerLat: city.center_lat,
+        centerLng: city.center_lng,
+        radiusMeters,
+        stepMeters,
+        jitterRatio: 0.35,
+        maxPoints,
+    });
+
+    // فلترة خفيفة: ما نجيب أماكن تبعد كثير عن center (حتى لو search رجعها)
+    const MAX_FROM_CENTER = radiusMeters * 1.6;
+
 
     // determine slugs
     let slugs = [];
@@ -378,6 +460,90 @@ export async function seedCityOnDemand({
     let totalImported = 0;
     const placesForGemini = [];
 
+    // for (const cat of categories) {
+    //     if (totalImported >= maxTotalPlaces) break;
+
+    //     const includedTypes = (cat.google_types || []).map(String);
+    //     if (!includedTypes.length) continue;
+
+    //     const minNeed = Number(cat.min_results_per_city ?? 10);
+    //     const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
+
+    //     const resp = await placesSearchNearby({
+    //         lat: city.center_lat,
+    //         lng: city.center_lng,
+    //         includedTypes,
+    //         maxResultCount: Math.min(20, maxThisCategory),
+    //         radius: radiusMeters,
+    //     });
+    //     searchCalls++;
+
+    //     const places = resp?.places || [];
+
+    //     for (const p of places) {
+    //         if (totalImported >= maxTotalPlaces) break;
+
+    //         const placeId = p.id;
+    //         if (!placeId) continue;
+
+    //         const tD0 = Date.now();
+    //         const d = await placesGetDetails(placeId);
+    //         const tD1 = Date.now();
+
+    //         detailsTotalMs += (tD1 - tD0);
+    //         detailsCalls += 1;
+
+    //         const name = d?.displayName?.text || p?.displayName?.text || null;
+    //         const lat = d?.location?.latitude ?? p?.location?.latitude ?? null;
+    //         const lng = d?.location?.longitude ?? p?.location?.longitude ?? null;
+
+    //         const rating = d?.rating ?? p?.rating ?? null;
+    //         const userRatingsTotal = d?.userRatingCount ?? p?.userRatingCount ?? null;
+
+    //         const primaryType = d?.primaryType ?? p?.primaryType ?? null;
+    //         const types = d?.types ?? p?.types ?? [];
+
+    //         const bestCategoryId =
+    //             pickBestCategoryIdForPlace({ placeTypes: types, primaryType }, categories) || cat.id;
+
+    //         const openHours = d?.regularOpeningHours ?? null;
+
+    //         const locationId = await upsertLocation({
+    //             city_id: city.id,
+    //             category_id: bestCategoryId,
+    //             name,
+    //             google_place_id: placeId,
+    //             lat,
+    //             lng,
+    //             rating,
+    //             user_ratings_total: userRatingsTotal,
+    //             open_hours: openHours ? JSON.stringify(openHours) : null,
+    //         });
+
+    //         const firstPhotoName = d?.photos?.[0]?.name || p?.photos?.[0]?.name || null;
+    //         await upsertPrimaryPhoto(locationId, firstPhotoName);
+
+    //         const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
+    //         const categorySlug = categorySlugRow?.slug || cat.slug;
+
+    //         await linkTripTypesByRules(locationId, categorySlug);
+
+    //         placesForGemini.push({
+    //             google_place_id: placeId,
+    //             name,
+    //             category_slug: categorySlug,
+    //             rating,
+    //             user_ratings_total: userRatingsTotal,
+    //         });
+
+    //         totalImported += 1;
+    //     }
+    // }
+    // dedup عالمي لكل run
+    //const seenPlaceIds = new Set();
+    // لو بدك تمنع details مرتين لنفس placeId (حتى لو تكرر بفئات مختلفة)
+    const detailedPlaceIds = new Set();
+
     for (const cat of categories) {
         if (totalImported >= maxTotalPlaces) break;
 
@@ -387,39 +553,89 @@ export async function seedCityOnDemand({
         const minNeed = Number(cat.min_results_per_city ?? 10);
         const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
 
-        const resp = await placesSearchNearby({
-            lat: city.center_lat,
-            lng: city.center_lng,
-            includedTypes,
-            maxResultCount: Math.min(20, maxThisCategory),
-            radius: radiusMeters,
-        });
-        searchCalls++;
+        // 1) Search عبر نقاط jitter واجمع placeIds (بدون details)
+        const collected = [];              // [{placeId, seedData}]
+        const collectedIds = new Set();    // per-category unique
 
-        const places = resp?.places || [];
+        for (const pt of points) {
+            if (collectedIds.size >= maxThisCategory) break;
 
-        for (const p of places) {
+            const resp = await placesSearchNearby({
+                lat: pt.lat,
+                lng: pt.lng,
+                includedTypes,
+                maxResultCount: 20,
+                radius: radiusMeters,
+            });
+            searchCalls++;
+
+            const places = resp?.places || [];
+            for (const p of places) {
+                const placeId = p?.id;
+                if (!placeId) continue;
+
+                // dedup على مستوى الفئة
+                if (collectedIds.has(placeId)) continue;
+
+                // فلترة خفيفة: بعيد عن مركز المدينة؟ ارمِه
+                const plat = p?.location?.latitude;
+                const plng = p?.location?.longitude;
+                if (plat != null && plng != null) {
+                    const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
+                    if (dist > MAX_FROM_CENTER) continue;
+                }
+
+                collectedIds.add(placeId);
+                collected.push({
+                    placeId,
+                    seed: {
+                        // نحتفظ بالبيانات الرخيصة من searchNearby (للاستفادة إن احتجنا)
+                        displayName: p?.displayName?.text || null,
+                        lat: plat ?? null,
+                        lng: plng ?? null,
+                        rating: p?.rating ?? null,
+                        userRatingCount: p?.userRatingCount ?? null,
+                        photos: p?.photos ?? null,
+                        primaryType: p?.primaryType ?? null,
+                        types: p?.types ?? null,
+                    },
+                });
+
+                if (collectedIds.size >= maxThisCategory) break;
+            }
+        }
+
+        // 2) اعمل details فقط للـ unique IDs اللي ما اتعاملنا معهم قبل
+        for (const item of collected) {
             if (totalImported >= maxTotalPlaces) break;
 
-            const placeId = p.id;
-            if (!placeId) continue;
+            const placeId = item.placeId;
+
+            // إذا دخل سابقًا بأي فئة، ما نعيد details (يوفّر كثير)
+            if (detailedPlaceIds.has(placeId)) continue;
+            detailedPlaceIds.add(placeId);
 
             const tD0 = Date.now();
             const d = await placesGetDetails(placeId);
             const tD1 = Date.now();
-
             detailsTotalMs += (tD1 - tD0);
             detailsCalls += 1;
 
-            const name = d?.displayName?.text || p?.displayName?.text || null;
-            const lat = d?.location?.latitude ?? p?.location?.latitude ?? null;
-            const lng = d?.location?.longitude ?? p?.location?.longitude ?? null;
+            const name = d?.displayName?.text || item.seed.displayName || null;
+            const lat = d?.location?.latitude ?? item.seed.lat ?? null;
+            const lng = d?.location?.longitude ?? item.seed.lng ?? null;
 
-            const rating = d?.rating ?? p?.rating ?? null;
-            const userRatingsTotal = d?.userRatingCount ?? p?.userRatingCount ?? null;
+            // فلترة خفيفة بعد details كمان (لو بدك تكون أضمن)
+            if (lat != null && lng != null) {
+                const dist = haversineMeters(city.center_lat, city.center_lng, lat, lng);
+                if (dist > MAX_FROM_CENTER) continue;
+            }
 
-            const primaryType = d?.primaryType ?? p?.primaryType ?? null;
-            const types = d?.types ?? p?.types ?? [];
+            const rating = d?.rating ?? item.seed.rating ?? null;
+            const userRatingsTotal = d?.userRatingCount ?? item.seed.userRatingCount ?? null;
+
+            const primaryType = d?.primaryType ?? item.seed.primaryType ?? null;
+            const types = d?.types ?? item.seed.types ?? [];
 
             const bestCategoryId =
                 pickBestCategoryIdForPlace({ placeTypes: types, primaryType }, categories) || cat.id;
@@ -438,12 +654,11 @@ export async function seedCityOnDemand({
                 open_hours: openHours ? JSON.stringify(openHours) : null,
             });
 
-            const firstPhotoName = d?.photos?.[0]?.name || p?.photos?.[0]?.name || null;
+            const firstPhotoName = d?.photos?.[0]?.name || item.seed?.photos?.[0]?.name || null;
             await upsertPrimaryPhoto(locationId, firstPhotoName);
 
             const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
             const categorySlug = categorySlugRow?.slug || cat.slug;
-
             await linkTripTypesByRules(locationId, categorySlug);
 
             placesForGemini.push({
@@ -456,7 +671,14 @@ export async function seedCityOnDemand({
 
             totalImported += 1;
         }
+        console.log("[COLLECT]", cat.slug, {
+            collected: collected.length,
+            uniqueIds: collectedIds.size,
+            detailsAlreadyDone: [...collectedIds].filter(id => detailedPlaceIds.has(id)).length,
+        });
+
     }
+
     const tSearch1 = Date.now();
     console.log(`[TIMING] placesSearchNearby total: ${tSearch1 - tSearch0} ms`, { searchCalls });
     console.log(`[TIMING] placesGetDetails total: ${detailsTotalMs} ms`, { detailsCalls, avgMs: detailsCalls ? Math.round(detailsTotalMs / detailsCalls) : 0 });
@@ -471,8 +693,12 @@ export async function seedCityOnDemand({
     let geminiBatches = 0;
     for (const group of chunk(filteredForGemini, batchSize)) {
         const tG0 = Date.now();
-        const out = await geminiEnrich(group, city.name);
+        const out = await geminiEnrich(group, city.name, city.name_ar);
+
         const tG1 = Date.now();
+
+        geminiTotalMs += (tG1 - tG0);
+        geminiBatches += 1;
 
         const results = out?.results || [];
         const map = new Map(results.map((r) => [r.google_place_id, r]));
@@ -492,8 +718,11 @@ export async function seedCityOnDemand({
 ///////Public API: ensure (called by controller)///////
 export async function ensureLocationsForTripType({
     cityId,
-    tripTypeSlug,
-    radiusMeters = 8000,
+    tripTypeSlug = null,
+    categoriesSlugs = null,
+    radiusMeters = 3000,     // ✅ default أصغر
+    stepMeters = 1500,       // ✅ جديد
+    maxPoints = 21,          // ✅ جديد
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
@@ -530,6 +759,7 @@ export async function ensureLocationsForTripType({
             tripTypeSlug: safeTripType,
             categoriesSlugs: missing,
             radiusMeters,
+            stepMeters: Math.round(radiusMeters * 0.5),
             maxTotalPlaces,
             batchSize,
         });
