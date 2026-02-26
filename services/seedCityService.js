@@ -231,7 +231,6 @@ async function upsertLocation({
       now(), now()
     )
     ON CONFLICT (google_place_id) DO UPDATE SET
-      city_id = EXCLUDED.city_id,
       category_id = COALESCE(EXCLUDED.category_id, public.locations.category_id),
       name = COALESCE(EXCLUDED.name, public.locations.name),
       lat = COALESCE(EXCLUDED.lat, public.locations.lat),
@@ -499,7 +498,8 @@ export async function seedCityOnDemand({
     });
 
     // فلترة خفيفة: ما نجيب أماكن تبعد كثير عن center (حتى لو search رجعها)
-    const MAX_FROM_CENTER = radiusMeters * 1.6;
+    //const MAX_FROM_CENTER = radiusMeters * 1.6;
+    const MAX_FROM_CENTER = radiusMeters * 1.05;
 
     // determine slugs
     let slugs = [];
