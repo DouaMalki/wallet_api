@@ -14,8 +14,50 @@ function chunk(arr, size) {
     for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
     return out;
 }
+//used it when there were 429 (very many requests).
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
+}
+
+// concurrency limiter (no libs)
+async function mapLimit(items, limit, fn) {
+    const ret = [];
+    const executing = new Set();
+
+    for (const item of items) {
+        const p = Promise.resolve().then(() => fn(item));
+        ret.push(p);
+        executing.add(p);
+        p.finally(() => executing.delete(p));
+
+        if (executing.size >= limit) {
+            await Promise.race(executing);
+        }
+    }
+
+    return Promise.all(ret);
+}
+
+// fetch with retry/backoff (handles 429/503/504)
+async function fetchWithRetry(url, options, { retries = 4, baseDelayMs = 800 } = {}) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        const res = await fetch(url, options);
+
+        if (res.ok) return res;
+
+        const status = res.status;
+        const shouldRetry = status === 429 || status === 503 || status === 504;
+
+        const bodyText = await res.text();
+
+        if (!shouldRetry || attempt === retries) {
+            throw new Error(`Fetch failed: ${status} ${bodyText}`);
+        }
+
+        // exponential backoff + jitter
+        const waitMs = Math.round(baseDelayMs * 2 ** (attempt - 1) * (0.7 + Math.random() * 0.6));
+        await sleep(waitMs);
+    }
 }
 
 // meters -> lat/lng delta helpers (approx)
@@ -269,7 +311,16 @@ async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20
     const fieldMask =
         "places.id,places.displayName,places.location,places.types,places.primaryType,places.rating,places.userRatingCount,places.photos";
 
-    const res = await fetch(url, {
+    // const res = await fetch(url, {
+    //     method: "POST",
+    //     headers: {
+    //         "Content-Type": "application/json",
+    //         "X-Goog-Api-Key": GOOGLE_KEY,
+    //         "X-Goog-FieldMask": fieldMask,
+    //     },
+    //     body: JSON.stringify(body),
+    // });
+    const res = await fetchWithRetry(url, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -279,10 +330,10 @@ async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20
         body: JSON.stringify(body),
     });
 
-    if (!res.ok) {
-        const t = await res.text();
-        throw new Error(`placesSearchNearby failed: ${res.status} ${t}`);
-    }
+    // if (!res.ok) {
+    //     const t = await res.text();
+    //     throw new Error(`placesSearchNearby failed: ${res.status} ${t}`);
+    // }
     return res.json();
 }
 
@@ -290,7 +341,20 @@ async function placesGetDetails(placeId) {
     const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
     const fieldMask = "id,displayName,location,types,primaryType,rating,userRatingCount,regularOpeningHours,photos";
 
-    const res = await fetch(url, {
+    // const res = await fetch(url, {
+    //     method: "GET",
+    //     headers: {
+    //         "Content-Type": "application/json",
+    //         "X-Goog-Api-Key": GOOGLE_KEY,
+    //         "X-Goog-FieldMask": fieldMask,
+    //     },
+    // });
+
+    // if (!res.ok) {
+    //     const t = await res.text();
+    //     throw new Error(`placesGetDetails failed: ${res.status} ${t}`);
+    // }
+    const res = await fetchWithRetry(url, {
         method: "GET",
         headers: {
             "Content-Type": "application/json",
@@ -298,11 +362,6 @@ async function placesGetDetails(placeId) {
             "X-Goog-FieldMask": fieldMask,
         },
     });
-
-    if (!res.ok) {
-        const t = await res.text();
-        throw new Error(`placesGetDetails failed: ${res.status} ${t}`);
-    }
     return res.json();
 }
 
@@ -441,7 +500,6 @@ export async function seedCityOnDemand({
 
     // فلترة خفيفة: ما نجيب أماكن تبعد كثير عن center (حتى لو search رجعها)
     const MAX_FROM_CENTER = radiusMeters * 1.6;
-
 
     // determine slugs
     let slugs = [];
@@ -606,18 +664,88 @@ export async function seedCityOnDemand({
         }
 
         // 2) اعمل details فقط للـ unique IDs اللي ما اتعاملنا معهم قبل
-        for (const item of collected) {
-            if (totalImported >= maxTotalPlaces) break;
+        // for (const item of collected) {
+        //     if (totalImported >= maxTotalPlaces) break;
+
+        //     const placeId = item.placeId;
+
+        //     // إذا دخل سابقًا بأي فئة، ما نعيد details (يوفّر كثير)
+        //     if (detailedPlaceIds.has(placeId)) continue;
+        //     detailedPlaceIds.add(placeId);
+
+        //     const tD0 = Date.now();
+        //     const d = await placesGetDetails(placeId);
+        //     const tD1 = Date.now();
+        //     detailsTotalMs += (tD1 - tD0);
+        //     detailsCalls += 1;
+
+        //     const name = d?.displayName?.text || item.seed.displayName || null;
+        //     const lat = d?.location?.latitude ?? item.seed.lat ?? null;
+        //     const lng = d?.location?.longitude ?? item.seed.lng ?? null;
+
+        //     // فلترة خفيفة بعد details كمان (لو بدك تكون أضمن)
+        //     if (lat != null && lng != null) {
+        //         const dist = haversineMeters(city.center_lat, city.center_lng, lat, lng);
+        //         if (dist > MAX_FROM_CENTER) continue;
+        //     }
+
+        //     const rating = d?.rating ?? item.seed.rating ?? null;
+        //     const userRatingsTotal = d?.userRatingCount ?? item.seed.userRatingCount ?? null;
+
+        //     const primaryType = d?.primaryType ?? item.seed.primaryType ?? null;
+        //     const types = d?.types ?? item.seed.types ?? [];
+
+        //     const bestCategoryId =
+        //         pickBestCategoryIdForPlace({ placeTypes: types, primaryType }, categories) || cat.id;
+
+        //     const openHours = d?.regularOpeningHours ?? null;
+
+        //     const locationId = await upsertLocation({
+        //         city_id: city.id,
+        //         category_id: bestCategoryId,
+        //         name,
+        //         google_place_id: placeId,
+        //         lat,
+        //         lng,
+        //         rating,
+        //         user_ratings_total: userRatingsTotal,
+        //         open_hours: openHours ? JSON.stringify(openHours) : null,
+        //     });
+
+        //     const firstPhotoName = d?.photos?.[0]?.name || item.seed?.photos?.[0]?.name || null;
+        //     await upsertPrimaryPhoto(locationId, firstPhotoName);
+
+        //     const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
+        //     const categorySlug = categorySlugRow?.slug || cat.slug;
+        //     await linkTripTypesByRules(locationId, categorySlug);
+
+        //     placesForGemini.push({
+        //         google_place_id: placeId,
+        //         name,
+        //         category_slug: categorySlug,
+        //         rating,
+        //         user_ratings_total: userRatingsTotal,
+        //     });
+
+        //     totalImported += 1;
+        // }
+        // 2) DETAILS with limited concurrency (e.g., 4)
+        const DETAILS_CONCURRENCY = 4;
+
+        const insertFlags = await mapLimit(collected, DETAILS_CONCURRENCY, async (item) => {
+            // stop inserting if global limit reached (soft stop)
+            if (totalImported >= maxTotalPlaces) return 0;
 
             const placeId = item.placeId;
 
-            // إذا دخل سابقًا بأي فئة، ما نعيد details (يوفّر كثير)
-            if (detailedPlaceIds.has(placeId)) continue;
+            // skip if we already did details for this place in this run
+            if (detailedPlaceIds.has(placeId)) return 0;
             detailedPlaceIds.add(placeId);
 
             const tD0 = Date.now();
             const d = await placesGetDetails(placeId);
             const tD1 = Date.now();
+
             detailsTotalMs += (tD1 - tD0);
             detailsCalls += 1;
 
@@ -625,10 +753,10 @@ export async function seedCityOnDemand({
             const lat = d?.location?.latitude ?? item.seed.lat ?? null;
             const lng = d?.location?.longitude ?? item.seed.lng ?? null;
 
-            // فلترة خفيفة بعد details كمان (لو بدك تكون أضمن)
+            // distance filter
             if (lat != null && lng != null) {
                 const dist = haversineMeters(city.center_lat, city.center_lng, lat, lng);
-                if (dist > MAX_FROM_CENTER) continue;
+                if (dist > MAX_FROM_CENTER) return 0;
             }
 
             const rating = d?.rating ?? item.seed.rating ?? null;
@@ -669,8 +797,14 @@ export async function seedCityOnDemand({
                 user_ratings_total: userRatingsTotal,
             });
 
-            totalImported += 1;
-        }
+            // IMPORTANT: don't increment totalImported here (race). Return flag instead.
+            return 1;
+        });
+
+        // after concurrency batch finishes, update totalImported once
+        const insertedCount = insertFlags.reduce((a, b) => a + b, 0);
+        totalImported += insertedCount;
+
         console.log("[COLLECT]", cat.slug, {
             collected: collected.length,
             uniqueIds: collectedIds.size,
@@ -720,9 +854,9 @@ export async function ensureLocationsForTripType({
     cityId,
     tripTypeSlug = null,
     categoriesSlugs = null,
-    radiusMeters = 3000,     // ✅ default أصغر
-    stepMeters = 1500,       // ✅ جديد
-    maxPoints = 21,          // ✅ جديد
+    radiusMeters = 3000,
+    stepMeters = 1500,
+    maxPoints = 21,
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
