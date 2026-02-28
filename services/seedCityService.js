@@ -254,23 +254,6 @@ async function upsertPrimaryPhoto(locationId, photoName) {
   `;
 }
 
-async function linkTripTypesByRules(locationId, categorySlug) {
-    const rows = await sql`
-    SELECT r.trip_type_id
-    FROM public.trip_type_rules r
-    WHERE r.is_active = TRUE
-      AND (r.rule_json->'required_category_slugs') ? ${categorySlug}
-  `;
-
-    for (const row of rows) {
-        await sql`
-      INSERT INTO public.location_trip_types (location_id, trip_type_id)
-      VALUES (${locationId}, ${row.trip_type_id})
-      ON CONFLICT (location_id, trip_type_id) DO NOTHING
-    `;
-    }
-}
-
 async function updateGeminiFields(googlePlaceId, enriched) {
     await sql`
     UPDATE public.locations
@@ -297,8 +280,6 @@ async function updateGeminiFields(googlePlaceId, enriched) {
   `;
 }
 
-// Preload: categorySlug -> tripTypeIds[] (from active rules)
-// This replaces the per-location SELECT inside linkTripTypesByRules
 async function preloadTripTypeIdsByCategorySlugs(categorySlugs) {
     if (!categorySlugs?.length) return new Map();
 
@@ -586,88 +567,6 @@ export async function seedCityOnDemand({
     let totalImported = 0;
     const placesForGemini = [];
 
-    // for (const cat of categories) {
-    //     if (totalImported >= maxTotalPlaces) break;
-
-    //     const includedTypes = (cat.google_types || []).map(String);
-    //     if (!includedTypes.length) continue;
-
-    //     const minNeed = Number(cat.min_results_per_city ?? 10);
-    //     const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
-
-    //     const resp = await placesSearchNearby({
-    //         lat: city.center_lat,
-    //         lng: city.center_lng,
-    //         includedTypes,
-    //         maxResultCount: Math.min(20, maxThisCategory),
-    //         radius: radiusMeters,
-    //     });
-    //     searchCalls++;
-
-    //     const places = resp?.places || [];
-
-    //     for (const p of places) {
-    //         if (totalImported >= maxTotalPlaces) break;
-
-    //         const placeId = p.id;
-    //         if (!placeId) continue;
-
-    //         const tD0 = Date.now();
-    //         const d = await placesGetDetails(placeId);
-    //         const tD1 = Date.now();
-
-    //         detailsTotalMs += (tD1 - tD0);
-    //         detailsCalls += 1;
-
-    //         const name = d?.displayName?.text || p?.displayName?.text || null;
-    //         const lat = d?.location?.latitude ?? p?.location?.latitude ?? null;
-    //         const lng = d?.location?.longitude ?? p?.location?.longitude ?? null;
-
-    //         const rating = d?.rating ?? p?.rating ?? null;
-    //         const userRatingsTotal = d?.userRatingCount ?? p?.userRatingCount ?? null;
-
-    //         const primaryType = d?.primaryType ?? p?.primaryType ?? null;
-    //         const types = d?.types ?? p?.types ?? [];
-
-    //         const bestCategoryId =
-    //             pickBestCategoryIdForPlace({ placeTypes: types, primaryType }, categories) || cat.id;
-
-    //         const openHours = d?.regularOpeningHours ?? null;
-
-    //         const locationId = await upsertLocation({
-    //             city_id: city.id,
-    //             category_id: bestCategoryId,
-    //             name,
-    //             google_place_id: placeId,
-    //             lat,
-    //             lng,
-    //             rating,
-    //             user_ratings_total: userRatingsTotal,
-    //             open_hours: openHours ? JSON.stringify(openHours) : null,
-    //         });
-
-    //         const firstPhotoName = d?.photos?.[0]?.name || p?.photos?.[0]?.name || null;
-    //         await upsertPrimaryPhoto(locationId, firstPhotoName);
-
-    //         const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
-    //         const categorySlug = categorySlugRow?.slug || cat.slug;
-
-    //         await linkTripTypesByRules(locationId, categorySlug);
-
-    //         placesForGemini.push({
-    //             google_place_id: placeId,
-    //             name,
-    //             category_slug: categorySlug,
-    //             rating,
-    //             user_ratings_total: userRatingsTotal,
-    //         });
-
-    //         totalImported += 1;
-    //     }
-    // }
-    // dedup عالمي لكل run
-    //const seenPlaceIds = new Set();
-    // لو بدك تمنع details مرتين لنفس placeId (حتى لو تكرر بفئات مختلفة)
     const detailedPlaceIds = new Set();
 
     for (const cat of categories) {
@@ -679,64 +578,12 @@ export async function seedCityOnDemand({
         const minNeed = Number(cat.min_results_per_city ?? 10);
         const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
 
-        // // 1) Search عبر نقاط jitter واجمع placeIds (بدون details)
-        // const collected = [];              // [{placeId, seedData}]
-        // const collectedIds = new Set();    // per-category unique
 
-        // for (const pt of points) {
-        //     if (collectedIds.size >= maxThisCategory) break;
+        const collected = [];// [{placeId, seedData}]
+        const collectedIds = new Set(); // per-category unique
 
-        //     const resp = await placesSearchNearby({
-        //         lat: pt.lat,
-        //         lng: pt.lng,
-        //         includedTypes,
-        //         maxResultCount: 20,
-        //         radius: radiusMeters,
-        //     });
-        //     searchCalls++;
-
-        //     const places = resp?.places || [];
-        //     for (const p of places) {
-        //         const placeId = p?.id;
-        //         if (!placeId) continue;
-
-        //         // dedup على مستوى الفئة
-        //         if (collectedIds.has(placeId)) continue;
-
-        //         // فلترة خفيفة: بعيد عن مركز المدينة؟ ارمِه
-        //         const plat = p?.location?.latitude;
-        //         const plng = p?.location?.longitude;
-        //         if (plat != null && plng != null) {
-        //             const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
-        //             if (dist > MAX_FROM_CENTER) continue;
-        //         }
-
-        //         collectedIds.add(placeId);
-        //         collected.push({
-        //             placeId,
-        //             seed: {
-        //                 displayName: p?.displayName?.text || null,
-        //                 lat: plat ?? null,
-        //                 lng: plng ?? null,
-        //                 rating: p?.rating ?? null,
-        //                 userRatingCount: p?.userRatingCount ?? null,
-        //                 photos: p?.photos ?? null,
-        //                 primaryType: p?.primaryType ?? null,
-        //                 types: p?.types ?? null,
-        //             },
-        //         });
-
-        //         if (collectedIds.size >= maxThisCategory) break;
-        //     }
-        // }
-
-        // 1) Search عبر نقاط jitter (CONCURRENT) واجمع placeIds (بدون details)
-        const collected = [];              // [{placeId, seedData}]
-        const collectedIds = new Set();    // per-category unique
-
-        // اعمل requests search بشكل متوازي محدود
         const searchResponses = await mapLimit(points, SEARCH_CONCURRENCY, async (pt) => {
-            // ملاحظة: ما فينا نعمل early stop هنا بسهولة لأننا بالتوازي
+
             const resp = await placesSearchNearby({
                 lat: pt.lat,
                 lng: pt.lng,
@@ -748,7 +595,6 @@ export async function seedCityOnDemand({
             return resp;
         });
 
-        // مرّ على النتائج واجمع IDs لحد ما نوصل maxThisCategory
         for (const resp of searchResponses) {
             if (collectedIds.size >= maxThisCategory) break;
 
@@ -787,74 +633,6 @@ export async function seedCityOnDemand({
             }
         }
 
-        // 2) اعمل details فقط للـ unique IDs اللي ما اتعاملنا معهم قبل
-        // for (const item of collected) {
-        //     if (totalImported >= maxTotalPlaces) break;
-
-        //     const placeId = item.placeId;
-
-        //     // إذا دخل سابقًا بأي فئة، ما نعيد details (يوفّر كثير)
-        //     if (detailedPlaceIds.has(placeId)) continue;
-        //     detailedPlaceIds.add(placeId);
-
-        //     const tD0 = Date.now();
-        //     const d = await placesGetDetails(placeId);
-        //     const tD1 = Date.now();
-        //     detailsTotalMs += (tD1 - tD0);
-        //     detailsCalls += 1;
-
-        //     const name = d?.displayName?.text || item.seed.displayName || null;
-        //     const lat = d?.location?.latitude ?? item.seed.lat ?? null;
-        //     const lng = d?.location?.longitude ?? item.seed.lng ?? null;
-
-        //     // فلترة خفيفة بعد details كمان (لو بدك تكون أضمن)
-        //     if (lat != null && lng != null) {
-        //         const dist = haversineMeters(city.center_lat, city.center_lng, lat, lng);
-        //         if (dist > MAX_FROM_CENTER) continue;
-        //     }
-
-        //     const rating = d?.rating ?? item.seed.rating ?? null;
-        //     const userRatingsTotal = d?.userRatingCount ?? item.seed.userRatingCount ?? null;
-
-        //     const primaryType = d?.primaryType ?? item.seed.primaryType ?? null;
-        //     const types = d?.types ?? item.seed.types ?? [];
-
-        //     const bestCategoryId =
-        //         pickBestCategoryIdForPlace({ placeTypes: types, primaryType }, categories) || cat.id;
-
-        //     const openHours = d?.regularOpeningHours ?? null;
-
-        //     const locationId = await upsertLocation({
-        //         city_id: city.id,
-        //         category_id: bestCategoryId,
-        //         name,
-        //         google_place_id: placeId,
-        //         lat,
-        //         lng,
-        //         rating,
-        //         user_ratings_total: userRatingsTotal,
-        //         open_hours: openHours ? JSON.stringify(openHours) : null,
-        //     });
-
-        //     const firstPhotoName = d?.photos?.[0]?.name || item.seed?.photos?.[0]?.name || null;
-        //     await upsertPrimaryPhoto(locationId, firstPhotoName);
-
-        //     const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
-        //     const categorySlug = categorySlugRow?.slug || cat.slug;
-        //     await linkTripTypesByRules(locationId, categorySlug);
-
-        //     placesForGemini.push({
-        //         google_place_id: placeId,
-        //         name,
-        //         category_slug: categorySlug,
-        //         rating,
-        //         user_ratings_total: userRatingsTotal,
-        //     });
-
-        //     totalImported += 1;
-        // }
-        // 2) DETAILS with limited concurrency (e.g., 4)
-        // 1.5) DB check: skip details for places already stored for this city
         const notDetailedYet = collected.filter(x => !detailedPlaceIds.has(x.placeId));
         const collectedPlaceIds = notDetailedYet.map(x => x.placeId);
         const existingSet = await getExistingPlaceIdsForCity(city.id, collectedPlaceIds);
@@ -865,12 +643,10 @@ export async function seedCityOnDemand({
         const DETAILS_CONCURRENCY = 4;
 
         const insertFlags = await mapLimit(toDetail, DETAILS_CONCURRENCY, async (item) => {
-            // stop inserting if global limit reached (soft stop)
             if (totalImported >= maxTotalPlaces) return 0;
 
             const placeId = item.placeId;
 
-            // skip if we already did details for this place in this run
             if (detailedPlaceIds.has(placeId)) return 0;
             detailedPlaceIds.add(placeId);
 
@@ -919,7 +695,6 @@ export async function seedCityOnDemand({
 
             const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
             const categorySlug = categorySlugRow?.slug || cat.slug;
-            // await linkTripTypesByRules(locationId, categorySlug);
             await linkTripTypesByRulesCached(locationId, categorySlug, tripTypeIdsBySlugMap);
 
             placesForGemini.push({
@@ -930,7 +705,6 @@ export async function seedCityOnDemand({
                 user_ratings_total: userRatingsTotal,
             });
 
-            // IMPORTANT: don't increment totalImported here (race). Return flag instead.
             return 1;
         });
 
@@ -1018,10 +792,6 @@ export async function ensureLocationsForTripType({
     if (!ok) {
         return { didSeed: false, reason: "locked", missing };
     }
-
-    // OPTIONAL: prevent parallel seeds for same city+tripType using advisory lock
-    // If you want: SELECT pg_try_advisory_lock(hashtext(...))
-    // For now: do seed directly
     try {
         const stats = await seedCityOnDemand({
             cityId,
