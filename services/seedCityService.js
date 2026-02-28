@@ -183,7 +183,7 @@ async function getMissingCategorySlugsForCity(cityId, requiredSlugs) {
 
     const missing = [];
     for (const r of rows) {
-        const minNeed = Number(r.min_need || 20);
+        const minNeed = Number(r.min_need || 5);
         const cnt = Number(r.cnt || 0);
         if (cnt < minNeed) missing.push(String(r.slug));
     }
@@ -297,7 +297,7 @@ async function updateGeminiFields(googlePlaceId, enriched) {
 }
 
 ///////Google Places helpers (same as your script)///////
-async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20, radius = 8000 }) {
+async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20, radius = 3000 }) {
     const url = "https://places.googleapis.com/v1/places:searchNearby";
     const body = {
         includedTypes,
@@ -363,6 +363,7 @@ async function placesGetDetails(placeId) {
     });
     return res.json();
 }
+const SEARCH_CONCURRENCY = 3; // جرّب 3 أو 4 (مش أكثر بالبداية)
 
 function pickBestCategoryIdForPlace({ placeTypes, primaryType }, categories) {
     for (const c of categories) {
@@ -611,13 +612,64 @@ export async function seedCityOnDemand({
         const minNeed = Number(cat.min_results_per_city ?? 10);
         const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
 
-        // 1) Search عبر نقاط jitter واجمع placeIds (بدون details)
+        // // 1) Search عبر نقاط jitter واجمع placeIds (بدون details)
+        // const collected = [];              // [{placeId, seedData}]
+        // const collectedIds = new Set();    // per-category unique
+
+        // for (const pt of points) {
+        //     if (collectedIds.size >= maxThisCategory) break;
+
+        //     const resp = await placesSearchNearby({
+        //         lat: pt.lat,
+        //         lng: pt.lng,
+        //         includedTypes,
+        //         maxResultCount: 20,
+        //         radius: radiusMeters,
+        //     });
+        //     searchCalls++;
+
+        //     const places = resp?.places || [];
+        //     for (const p of places) {
+        //         const placeId = p?.id;
+        //         if (!placeId) continue;
+
+        //         // dedup على مستوى الفئة
+        //         if (collectedIds.has(placeId)) continue;
+
+        //         // فلترة خفيفة: بعيد عن مركز المدينة؟ ارمِه
+        //         const plat = p?.location?.latitude;
+        //         const plng = p?.location?.longitude;
+        //         if (plat != null && plng != null) {
+        //             const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
+        //             if (dist > MAX_FROM_CENTER) continue;
+        //         }
+
+        //         collectedIds.add(placeId);
+        //         collected.push({
+        //             placeId,
+        //             seed: {
+        //                 displayName: p?.displayName?.text || null,
+        //                 lat: plat ?? null,
+        //                 lng: plng ?? null,
+        //                 rating: p?.rating ?? null,
+        //                 userRatingCount: p?.userRatingCount ?? null,
+        //                 photos: p?.photos ?? null,
+        //                 primaryType: p?.primaryType ?? null,
+        //                 types: p?.types ?? null,
+        //             },
+        //         });
+
+        //         if (collectedIds.size >= maxThisCategory) break;
+        //     }
+        // }
+
+        // 1) Search عبر نقاط jitter (CONCURRENT) واجمع placeIds (بدون details)
         const collected = [];              // [{placeId, seedData}]
         const collectedIds = new Set();    // per-category unique
 
-        for (const pt of points) {
-            if (collectedIds.size >= maxThisCategory) break;
-
+        // اعمل requests search بشكل متوازي محدود
+        const searchResponses = await mapLimit(points, SEARCH_CONCURRENCY, async (pt) => {
+            // ملاحظة: ما فينا نعمل early stop هنا بسهولة لأننا بالتوازي
             const resp = await placesSearchNearby({
                 lat: pt.lat,
                 lng: pt.lng,
@@ -626,18 +678,24 @@ export async function seedCityOnDemand({
                 radius: radiusMeters,
             });
             searchCalls++;
+            return resp;
+        });
+
+        // مرّ على النتائج واجمع IDs لحد ما نوصل maxThisCategory
+        for (const resp of searchResponses) {
+            if (collectedIds.size >= maxThisCategory) break;
 
             const places = resp?.places || [];
             for (const p of places) {
                 const placeId = p?.id;
                 if (!placeId) continue;
 
-                // dedup على مستوى الفئة
                 if (collectedIds.has(placeId)) continue;
 
-                // فلترة خفيفة: بعيد عن مركز المدينة؟ ارمِه
                 const plat = p?.location?.latitude;
                 const plng = p?.location?.longitude;
+
+                // distance filter (cheap)
                 if (plat != null && plng != null) {
                     const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
                     if (dist > MAX_FROM_CENTER) continue;
@@ -647,7 +705,6 @@ export async function seedCityOnDemand({
                 collected.push({
                     placeId,
                     seed: {
-                        // نحتفظ بالبيانات الرخيصة من searchNearby (للاستفادة إن احتجنا)
                         displayName: p?.displayName?.text || null,
                         lat: plat ?? null,
                         lng: plng ?? null,
