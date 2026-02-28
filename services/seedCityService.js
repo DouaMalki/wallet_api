@@ -344,6 +344,19 @@ async function linkTripTypesByRulesCached(locationId, categorySlug, tripTypeIdsB
     }
 }
 
+// Return set of placeIds that already exist in DB for this city
+async function getExistingPlaceIdsForCity(cityId, googlePlaceIds) {
+    if (!googlePlaceIds?.length) return new Set();
+
+    const rows = await sql`
+      SELECT google_place_id
+      FROM public.locations
+      WHERE city_id = ${cityId}
+        AND google_place_id = ANY(${googlePlaceIds})
+    `;
+    return new Set(rows.map(r => r.google_place_id));
+}
+
 ///////Google Places helpers (same as your script)///////
 async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20, radius = 3000 }) {
     const url = "https://places.googleapis.com/v1/places:searchNearby";
@@ -838,9 +851,16 @@ export async function seedCityOnDemand({
         //     totalImported += 1;
         // }
         // 2) DETAILS with limited concurrency (e.g., 4)
+        // 1.5) DB check: skip details for places already stored for this city
+        const collectedPlaceIds = collected.map(x => x.placeId);
+        const existingSet = await getExistingPlaceIdsForCity(city.id, collectedPlaceIds);
+
+        // Filter out existing to reduce expensive details calls
+        const toDetail = collected.filter(x => !existingSet.has(x.placeId));
+
         const DETAILS_CONCURRENCY = 4;
 
-        const insertFlags = await mapLimit(collected, DETAILS_CONCURRENCY, async (item) => {
+        const insertFlags = await mapLimit(toDetail, DETAILS_CONCURRENCY, async (item) => {
             // stop inserting if global limit reached (soft stop)
             if (totalImported >= maxTotalPlaces) return 0;
 
@@ -917,7 +937,9 @@ export async function seedCityOnDemand({
         console.log("[COLLECT]", cat.slug, {
             collected: collected.length,
             uniqueIds: collectedIds.size,
-            detailsAlreadyDone: [...collectedIds].filter(id => detailedPlaceIds.has(id)).length,
+            alreadyInDb: existingSet.size,
+            toDetail: toDetail.length,
+            detailsAlreadyDoneInRun: [...collectedIds].filter(id => detailedPlaceIds.has(id)).length,
         });
 
     }
