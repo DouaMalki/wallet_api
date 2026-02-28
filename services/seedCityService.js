@@ -296,6 +296,54 @@ async function updateGeminiFields(googlePlaceId, enriched) {
   `;
 }
 
+// Preload: categorySlug -> tripTypeIds[] (from active rules)
+// This replaces the per-location SELECT inside linkTripTypesByRules
+async function preloadTripTypeIdsByCategorySlugs(categorySlugs) {
+    if (!categorySlugs?.length) return new Map();
+
+    // Ensure slugs are normalized
+    const slugs = categorySlugs.map(s => String(s).toLowerCase().trim()).filter(Boolean);
+
+    // Expand required_category_slugs array into rows using jsonb_array_elements_text
+    // Only keep slugs we care about to reduce data
+    const rows = await sql`
+      SELECT
+        r.trip_type_id,
+        lower(trim(x.slug)) AS category_slug
+      FROM public.trip_type_rules r
+      CROSS JOIN LATERAL jsonb_array_elements_text(r.rule_json->'required_category_slugs') AS x(slug)
+      WHERE r.is_active = TRUE
+        AND lower(trim(x.slug)) = ANY(${slugs})
+    `;
+
+    const map = new Map(); // slug -> [trip_type_id, ...]
+    for (const row of rows) {
+        const slug = String(row.category_slug);
+        const tripTypeId = row.trip_type_id;
+
+        if (!map.has(slug)) map.set(slug, []);
+        map.get(slug).push(tripTypeId);
+    }
+
+    return map;
+}
+
+// Fast link using cached mapping (no SELECT)
+async function linkTripTypesByRulesCached(locationId, categorySlug, tripTypeIdsBySlugMap) {
+    const slug = String(categorySlug).toLowerCase().trim();
+    const tripTypeIds = tripTypeIdsBySlugMap.get(slug) || [];
+    if (!tripTypeIds.length) return;
+
+    // Simple + safe: a few inserts (usually small list)
+    for (const tripTypeId of tripTypeIds) {
+        await sql`
+          INSERT INTO public.location_trip_types (location_id, trip_type_id)
+          VALUES (${locationId}, ${tripTypeId})
+          ON CONFLICT (location_id, trip_type_id) DO NOTHING
+        `;
+    }
+}
+
 ///////Google Places helpers (same as your script)///////
 async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20, radius = 3000 }) {
     const url = "https://places.googleapis.com/v1/places:searchNearby";
@@ -515,6 +563,9 @@ export async function seedCityOnDemand({
 
     const categories = await getCategoriesBySlugs(slugs);
     if (!categories.length) return { imported: 0, geminiEnriched: 0, categories: slugs };
+
+    // Preload rules mapping once (kills per-location SELECT)
+    const tripTypeIdsBySlugMap = await preloadTripTypeIdsByCategorySlugs(slugs);
 
     let totalImported = 0;
     const placesForGemini = [];
@@ -844,7 +895,8 @@ export async function seedCityOnDemand({
 
             const categorySlugRow = categories.find((c) => c.id === bestCategoryId);
             const categorySlug = categorySlugRow?.slug || cat.slug;
-            await linkTripTypesByRules(locationId, categorySlug);
+            // await linkTripTypesByRules(locationId, categorySlug);
+            await linkTripTypesByRulesCached(locationId, categorySlug, tripTypeIdsBySlugMap);
 
             placesForGemini.push({
                 google_place_id: placeId,
