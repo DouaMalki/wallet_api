@@ -183,7 +183,8 @@ async function getMissingCategorySlugsForCity(cityId, requiredSlugs) {
 
     const missing = [];
     for (const r of rows) {
-        const minNeed = Number(r.min_need || 5);
+        //const minNeed = Number(r.min_need || 5);
+        const minNeed = Number(r.min_need ?? 20);
         const cnt = Number(r.cnt || 0);
         if (cnt < minNeed) missing.push(String(r.slug));
     }
@@ -424,7 +425,7 @@ async function placesGetDetails(placeId) {
     });
     return res.json();
 }
-const SEARCH_CONCURRENCY = 3; // جرّب 3 أو 4 (مش أكثر بالبداية)
+
 
 function pickBestCategoryIdForPlace({ placeTypes, primaryType }, categories) {
     for (const c of categories) {
@@ -549,6 +550,8 @@ export async function seedCityOnDemand({
     let detailsCalls = 0;
 
     const city = await getCityOrThrow(cityId);
+
+    const SEARCH_CONCURRENCY = 3;
 
     const points = buildJitterPoints({
         centerLat: city.center_lat,
@@ -852,11 +855,12 @@ export async function seedCityOnDemand({
         // }
         // 2) DETAILS with limited concurrency (e.g., 4)
         // 1.5) DB check: skip details for places already stored for this city
-        const collectedPlaceIds = collected.map(x => x.placeId);
+        const notDetailedYet = collected.filter(x => !detailedPlaceIds.has(x.placeId));
+        const collectedPlaceIds = notDetailedYet.map(x => x.placeId);
         const existingSet = await getExistingPlaceIdsForCity(city.id, collectedPlaceIds);
+        const toDetail = notDetailedYet.filter(x => !existingSet.has(x.placeId));
 
-        // Filter out existing to reduce expensive details calls
-        const toDetail = collected.filter(x => !existingSet.has(x.placeId));
+        const alreadyDoneBefore = collected.length - notDetailedYet.length;
 
         const DETAILS_CONCURRENCY = 4;
 
@@ -939,7 +943,7 @@ export async function seedCityOnDemand({
             uniqueIds: collectedIds.size,
             alreadyInDb: existingSet.size,
             toDetail: toDetail.length,
-            detailsAlreadyDoneInRun: [...collectedIds].filter(id => detailedPlaceIds.has(id)).length,
+            detailsAlreadyDoneInRun: alreadyDoneBefore,
         });
 
     }
