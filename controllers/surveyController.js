@@ -23,7 +23,7 @@ export async function getPendingSurveys(req, res) {
         title
       FROM saved_trip_plans
       WHERE user_id = ${user_id}
-        AND saved = true
+        AND confirmed = true
         AND answered_survey = false
       ORDER BY created_at DESC
     `;

@@ -35,7 +35,7 @@ router.get("/", async (req, res) => {
             const text = await r.text().catch(() => "");
             return res.status(r.status).send(text || "Failed to fetch photo");
         }
-
+        //
         // مرّري الصورة كما هي
         res.setHeader("Content-Type", r.headers.get("content-type") || "image/jpeg");
         const buf = Buffer.from(await r.arrayBuffer());

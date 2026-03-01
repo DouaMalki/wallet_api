@@ -23,7 +23,7 @@ async function main() {
     const mode = (getArg("mode", "on_demand") || "on_demand").toLowerCase(); // seed | on_demand | ensure
     const tripTypeSlug = getArg("trip_type"); // optional
     const categoriesCsv = getArg("categories"); // optional
-    const radiusMeters = Number(getArg("radius", "8000"));
+    const radiusMeters = Number(getArg("radius", "3000"));
     const maxTotalPlaces = Number(getArg("max_total", "220"));
     const batchSize = Number(getArg("batch", "15"));
 
