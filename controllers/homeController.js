@@ -6,33 +6,50 @@ export async function getPublishedTripPlans(req, res) {
   try {
     const result = await sql`
       SELECT
-        p.id AS plan_id,
+        p.id,
         p.title,
         p.city_id,
         p.trip_type_slug,
-        p.created_at,
-        p.start_date,
-        p.end_date,
+        p.audience_tag,
+        p.budget_max,
         p.number_of_seens,
 
-        /* Total days (inclusive) */
-        (p.end_date - p.start_date + 1) AS total_days,
+        /* Rating stats */
+        COALESCE(stats.rating, 0) AS rating,
+        COALESCE(stats.total_ratings, 0) AS total_ratings,
 
-        /* Global rating (from users) */
-        stats.rating,
-        stats.total_ratings,
-
-        /* User rating (NULL if guest) */
+        /* User rating */
         ur.rating AS user_rating,
 
-        /* First location image ONLY */
-        first_img.photo_url,
-        first_img.photo_reference,
-        first_img.source
+        /* Days with locations */
+        (
+          SELECT json_agg(
+            json_build_object(
+              'date', d.day_key,
+              'items', (
+                SELECT json_agg(
+                  json_build_object(
+                    'location_name', l.name,
+                    'start_time', i.start_time,
+                    'end_time', i.end_time,
+                    'position', i.position
+                  )
+                  ORDER BY i.position
+                )
+                FROM saved_trip_plan_items i
+                JOIN locations l ON l.id = i.location_id
+                WHERE i.plan_day_id = d.id
+              )
+            )
+            ORDER BY d.day_key
+          )
+          FROM saved_trip_plan_days d
+          WHERE d.plan_id = p.id
+        ) AS days
 
       FROM saved_trip_plans p
 
-      /* Global stats */
+      /* Rating aggregation */
       LEFT JOIN LATERAL (
         SELECT
           ROUND(AVG(r.rating)::numeric, 2) AS rating,
@@ -41,39 +58,20 @@ export async function getPublishedTripPlans(req, res) {
         WHERE r.plan_id = p.id
       ) stats ON TRUE
 
-      /* User rating (optional) */
+      /* User rating */
       LEFT JOIN trip_plan_ratings ur
         ON ur.plan_id = p.id
        AND ur.user_id = ${user_id ?? null}
 
-      /* First location IMAGE ONLY */
-      LEFT JOIN LATERAL (
-        SELECT
-          lp.photo_url,
-          lp.photo_reference,
-          lp.source
-        FROM saved_trip_plan_days d
-        JOIN saved_trip_plan_items i
-          ON i.plan_day_id = d.id
-        JOIN locations l
-          ON l.id = i.location_id
-        LEFT JOIN LATERAL (
-          SELECT photo_url, photo_reference, source
-          FROM location_photos
-          WHERE location_id = l.id
-          ORDER BY is_primary DESC, created_at ASC
-          LIMIT 1
-        ) lp ON TRUE
-        WHERE d.plan_id = p.id
-        ORDER BY d.day_key ASC, i.position ASC
-        LIMIT 1
-      ) first_img ON TRUE
-
       WHERE p.published = TRUE
-      ORDER BY p.created_at DESC
+
+      ORDER BY stats.rating DESC NULLS LAST,
+               stats.total_ratings DESC,
+               p.created_at DESC
     `;
 
     res.json(result);
+
   } catch (err) {
     console.error("Get published trip plans error:", err);
     res.status(500).json({
@@ -156,16 +154,51 @@ export async function getTodayTripPlan(req, res) {
   }
 
   try {
-    /* Get today's trip plan */
-    const plans = await sql`
+    const result = await sql`
       SELECT
-        p.id AS plan_id,
+        p.id,
+        p.title,
         p.city_id,
         p.trip_type_slug,
+        p.audience_tag,
+        p.budget_max,
         p.start_date,
         p.end_date,
-        CURRENT_DATE - p.start_date + 1 AS current_day,
-        p.end_date - p.start_date + 1 AS total_days
+
+        /* Progress */
+        (CURRENT_DATE - p.start_date + 1) AS current_day,
+        (p.end_date - p.start_date + 1) AS total_days,
+
+        /* Days with items */
+        (
+          SELECT json_agg(
+            json_build_object(
+              'day_id', d.id,
+              'date', d.day_key,
+              'items', (
+                SELECT json_agg(
+                  json_build_object(
+                    'item_id', i.id,
+                    'position', i.position,
+                    'location_id', l.id,
+                    'location_name', l.name,
+                    'start_time', i.start_time,
+                    'end_time', i.end_time,
+                    'duration_min', i.duration_min
+                  )
+                  ORDER BY i.position
+                )
+                FROM saved_trip_plan_items i
+                JOIN locations l ON l.id = i.location_id
+                WHERE i.plan_day_id = d.id
+              )
+            )
+            ORDER BY d.day_key
+          )
+          FROM saved_trip_plan_days d
+          WHERE d.plan_id = p.id
+        ) AS days
+
       FROM saved_trip_plans p
       WHERE p.user_id = ${user_id}
         AND CURRENT_DATE BETWEEN p.start_date AND p.end_date
@@ -173,60 +206,12 @@ export async function getTodayTripPlan(req, res) {
       LIMIT 1
     `;
 
-    if (plans.length === 0) {
+    if (result.length === 0) {
       return res.status(404).json({ message: "No trip today" });
     }
 
-    const plan = plans[0];
+    res.json(result[0]);
 
-    /* Get FIRST location image */
-    const image = await sql`
-      SELECT
-        lp.photo_url,
-        lp.photo_reference,
-        lp.source
-      FROM saved_trip_plan_days d
-      JOIN saved_trip_plan_items i
-        ON i.plan_day_id = d.id
-      JOIN locations l
-        ON l.id = i.location_id
-      LEFT JOIN LATERAL (
-        SELECT photo_url, photo_reference, source
-        FROM location_photos
-        WHERE location_id = l.id
-        ORDER BY is_primary DESC, created_at ASC
-        LIMIT 1
-      ) lp ON TRUE
-      WHERE d.plan_id = ${plan.plan_id}
-      ORDER BY d.day_key ASC, i.position ASC
-      LIMIT 1
-    `;
-
-    let photo = null;
-
-    if (image.length > 0) {
-      const img = image[0];
-      photo =
-        img.source === "admin"
-          ? img.photo_url
-          : img.photo_reference; // frontend builds Google URL
-    }
-
-    /* Response */
-    res.json({
-      plan_id: plan.plan_id,
-      city_id: plan.city_id,
-      trip_type_slug: plan.trip_type_slug,
-      dates: {
-        start_date: plan.start_date,
-        end_date: plan.end_date,
-      },
-      progress: {
-        current_day: Number(plan.current_day),
-        total_days: Number(plan.total_days),
-      },
-      photo,
-    });
   } catch (err) {
     console.error("getTodayTripPlan error:", err);
     res.status(500).json({
@@ -234,7 +219,6 @@ export async function getTodayTripPlan(req, res) {
     });
   }
 }
-
 
 export async function incrementTripPlanSeens(req, res) {
   const { plan_id } = req.body;
