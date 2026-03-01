@@ -13,6 +13,10 @@ export async function getPublishedTripPlans(req, res) {
         p.audience_tag,
         p.budget_max,
         p.number_of_seens,
+        p.start_date,
+        p.end_date,
+
+        (p.end_date - p.start_date + 1) AS total_days,
 
         /* Rating stats */
         COALESCE(stats.rating, 0) AS rating,
@@ -21,23 +25,34 @@ export async function getPublishedTripPlans(req, res) {
         /* User rating */
         ur.rating AS user_rating,
 
-        /* Days with locations */
+        /* DAYS + LOCATIONS */
         (
           SELECT json_agg(
             json_build_object(
+              'day_id', d.id,
               'date', d.day_key,
               'items', (
                 SELECT json_agg(
                   json_build_object(
+                    'location_id', l.id,
                     'location_name', l.name,
                     'start_time', i.start_time,
                     'end_time', i.end_time,
-                    'position', i.position
+                    'position', i.position,
+                    'photo_reference', lp.photo_reference,
+                    'photo_url', lp.photo_url
                   )
                   ORDER BY i.position
                 )
                 FROM saved_trip_plan_items i
                 JOIN locations l ON l.id = i.location_id
+                LEFT JOIN LATERAL (
+                  SELECT photo_reference, photo_url
+                  FROM location_photos
+                  WHERE location_id = l.id
+                  ORDER BY is_primary DESC, created_at DESC
+                  LIMIT 1
+                ) lp ON TRUE
                 WHERE i.plan_day_id = d.id
               )
             )
@@ -165,11 +180,9 @@ export async function getTodayTripPlan(req, res) {
         p.start_date,
         p.end_date,
 
-        /* Progress */
         (CURRENT_DATE - p.start_date + 1) AS current_day,
         (p.end_date - p.start_date + 1) AS total_days,
 
-        /* Days with items */
         (
           SELECT json_agg(
             json_build_object(
@@ -178,18 +191,25 @@ export async function getTodayTripPlan(req, res) {
               'items', (
                 SELECT json_agg(
                   json_build_object(
-                    'item_id', i.id,
-                    'position', i.position,
                     'location_id', l.id,
                     'location_name', l.name,
                     'start_time', i.start_time,
                     'end_time', i.end_time,
-                    'duration_min', i.duration_min
+                    'position', i.position,
+                    'photo_reference', lp.photo_reference,
+                    'photo_url', lp.photo_url
                   )
                   ORDER BY i.position
                 )
                 FROM saved_trip_plan_items i
                 JOIN locations l ON l.id = i.location_id
+                LEFT JOIN LATERAL (
+                  SELECT photo_reference, photo_url
+                  FROM location_photos
+                  WHERE location_id = l.id
+                  ORDER BY is_primary DESC, created_at DESC
+                  LIMIT 1
+                ) lp ON TRUE
                 WHERE i.plan_day_id = d.id
               )
             )
