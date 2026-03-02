@@ -324,3 +324,63 @@ export async function SaveTripPlan(req, res) {
     });
   }
 }
+
+export async function unConfirmTripPlan(req, res) {
+  const { plan_id } = req.body;
+  const firebaseUid = req.headers["firebase-uid"];
+
+  if (!plan_id || !firebaseUid) {
+    return res.status(400).json({
+      message: "plan_id and firebase-uid are required",
+    });
+  }
+
+  try {
+    const user = await sql`
+      SELECT id FROM users
+      WHERE firebase_uid = ${firebaseUid}
+      LIMIT 1
+    `;
+
+    if (user.length === 0) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const userId = user[0].id;
+
+    const plan = await sql`
+      SELECT id, confirmed
+      FROM saved_trip_plans
+      WHERE id = ${plan_id}
+      AND user_id = ${userId}
+    `;
+
+    if (plan.length === 0) {
+      return res.status(404).json({
+        message: "Trip plan not found",
+      });
+    }
+
+    const currentConfirmed = plan[0].confirmed;
+
+    const updated = await sql`
+      UPDATE saved_trip_plans
+      SET confirmed = ${!currentConfirmed}
+      WHERE id = ${plan_id}
+      AND user_id = ${userId}
+      RETURNING confirmed
+    `;
+
+    res.status(200).json({
+      confirmed: updated[0].confirmed,
+    });
+
+  } catch (err) {
+    console.error("Toggle confirm error:", err);
+    res.status(500).json({
+      message: "Failed to toggle confirmed trip plan",
+    });
+  }
+}
