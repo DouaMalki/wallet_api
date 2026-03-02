@@ -324,7 +324,6 @@ export async function SaveTripPlan(req, res) {
     });
   }
 }
-
 export async function unConfirmTripPlan(req, res) {
   const { plan_id } = req.body;
   const firebaseUid = req.headers["firebase-uid"];
@@ -351,9 +350,9 @@ export async function unConfirmTripPlan(req, res) {
     const userId = user[0].id;
 
     const plan = await sql`
-      SELECT id, confirmed
+      SELECT plan_id, confirmed
       FROM saved_trip_plans
-      WHERE id = ${plan_id}
+      WHERE plan_id = ${plan_id}
       AND user_id = ${userId}
     `;
 
@@ -363,12 +362,12 @@ export async function unConfirmTripPlan(req, res) {
       });
     }
 
-    const currentConfirmed = plan[0].confirmed;
+    const currentConfirmed = Boolean(plan[0].confirmed);
 
     const updated = await sql`
       UPDATE saved_trip_plans
       SET confirmed = ${!currentConfirmed}
-      WHERE id = ${plan_id}
+      WHERE plan_id = ${plan_id}
       AND user_id = ${userId}
       RETURNING confirmed
     `;
@@ -378,9 +377,9 @@ export async function unConfirmTripPlan(req, res) {
     });
 
   } catch (err) {
-  console.error("FULL ERROR:", err);
-  res.status(500).json({
-    message: err.message,
-  });
-}
+    console.error("Toggle confirm error:", err);
+    res.status(500).json({
+      message: err.message,
+    });
+  }
 }
