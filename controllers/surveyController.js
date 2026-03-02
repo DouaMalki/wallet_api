@@ -1,8 +1,10 @@
 import { sql } from "../config/db.js";
 
-/* Get the trip plans for the given user_id where
-   - answered_survey = FALSE
-   - saved = TRUE
+/*
+  Get trip plans for a given user_id where:
+  - confirmed = TRUE
+  - answered_survey = FALSE
+  - trip already ended (end_date < today)
 */
 export async function getPendingSurveys(req, res) {
   const { user_id } = req.body;
@@ -20,12 +22,15 @@ export async function getPendingSurveys(req, res) {
         COALESCE(title, 'Untitled Trip') AS name,
         city_id,
         trip_type_slug,
-        title
+        title,
+        start_date,
+        end_date
       FROM saved_trip_plans
       WHERE user_id = ${user_id}
-        AND confirmed = true
-        AND answered_survey = false
-      ORDER BY created_at DESC
+        AND confirmed = TRUE
+        AND answered_survey = FALSE
+        AND end_date < CURRENT_DATE
+      ORDER BY end_date DESC
     `;
 
     res.status(200).json(result);
