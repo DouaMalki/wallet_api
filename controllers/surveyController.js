@@ -73,7 +73,6 @@ export async function getProblemTypes(req, res) {
 }
 
 
-/* Get the locations of a trip plan for survey */
 /* Get the locations of a trip plan for survey (grouped by day) */
 export async function getSurveyLocations(req, res) {
   const { plan_id } = req.body;
