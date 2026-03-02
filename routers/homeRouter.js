@@ -4,7 +4,8 @@ import {
   ratePublishedTripPlan,
   incrementTripPlanSeens,
   getTodayTripPlan,
-  SaveTripPlan
+  SaveTripPlan,
+  unConfirmTripPlan
 } from "../controllers/homeController.js";
 
 const router = express.Router();
@@ -14,6 +15,6 @@ router.post("/home/rating", ratePublishedTripPlan);
 router.post("/home/seen", incrementTripPlanSeens);
 router.get("/home/todayTripPlan", getTodayTripPlan);
 router.post("/home/saveTripPlan", SaveTripPlan);
-router.post("/home/unConfirmTripPlan", toggleConfirmTripPlan);
+router.post("/home/unConfirmTripPlan", unConfirmTripPlan);
 
 export default router;
