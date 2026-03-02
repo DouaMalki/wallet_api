@@ -378,9 +378,9 @@ export async function unConfirmTripPlan(req, res) {
     });
 
   } catch (err) {
-    console.error("Toggle confirm error:", err);
-    res.status(500).json({
-      message: "Failed to toggle confirmed trip plan",
-    });
-  }
+  console.error("FULL ERROR:", err);
+  res.status(500).json({
+    message: err.message,
+  });
+}
 }
