@@ -275,3 +275,51 @@ export async function incrementTripPlanSeens(req, res) {
     });
   }
 }
+
+export async function toggleSaveTripPlan(req, res) {
+  const { plan_id, user_id } = req.body;
+
+  if (!plan_id || !user_id) {
+    return res.status(400).json({
+      message: "plan_id and user_id are required",
+    });
+  }
+
+  try {
+    const plan = await sql`
+      SELECT id, saved
+      FROM saved_trip_plans
+      WHERE id = ${plan_id}
+        AND user_id = ${user_id}
+    `;
+
+    if (plan.length === 0) {
+      return res.status(404).json({
+        message: "Trip plan not found",
+      });
+    }
+
+    const currentSaved = plan[0].saved;
+
+    const updated = await sql`
+      UPDATE saved_trip_plans
+      SET saved = ${!currentSaved}
+      WHERE id = ${plan_id}
+        AND user_id = ${user_id}
+      RETURNING saved
+    `;
+
+    res.status(200).json({
+      saved: updated[0].saved,
+      message: updated[0].saved
+        ? "Trip plan saved"
+        : "Trip plan unsaved",
+    });
+
+  } catch (err) {
+    console.error("Toggle save trip plan error:", err);
+    res.status(500).json({
+      message: "Failed to toggle save trip plan",
+    });
+  }
+}
