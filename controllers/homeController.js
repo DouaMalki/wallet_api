@@ -15,6 +15,7 @@ export async function getPublishedTripPlans(req, res) {
         p.number_of_seens,
         p.start_date,
         p.end_date,
+        p.saved,
 
         (p.end_date - p.start_date + 1) AS total_days,
 
