@@ -10,7 +10,7 @@ const router = express.Router();
 
 router.get("/home/published", getPublishedTripPlans);
 router.post("/home/rating", ratePublishedTripPlan);
-router.get("/home/seen", incrementTripPlanSeens);
+router.post("/home/seen", incrementTripPlanSeens);
 router.get("/home/todayTripPlan", getTodayTripPlan);
 
 export default router;
