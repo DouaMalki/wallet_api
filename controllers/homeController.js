@@ -324,36 +324,23 @@ export async function SaveTripPlan(req, res) {
     });
   }
 }
-export async function unConfirmTripPlan(req, res) {
-  const { plan_id } = req.body;
-  const firebaseUid = req.headers["firebase-uid"];
 
-  if (!plan_id || !firebaseUid) {
+
+export async function unConfirmTripPlan(req, res) {
+  const { plan_id, user_id } = req.body;
+
+  if (!plan_id || !user_id) {
     return res.status(400).json({
-      message: "plan_id and firebase-uid are required",
+      message: "plan_id and user_id are required",
     });
   }
 
   try {
-    const user = await sql`
-      SELECT id FROM users
-      WHERE firebase_uid = ${firebaseUid}
-      LIMIT 1
-    `;
-
-    if (user.length === 0) {
-      return res.status(404).json({
-        message: "User not found",
-      });
-    }
-
-    const userId = user[0].id;
-
     const plan = await sql`
-      SELECT plan_id, confirmed
+      SELECT id, confirmed
       FROM saved_trip_plans
-      WHERE plan_id = ${plan_id}
-      AND user_id = ${userId}
+      WHERE id = ${plan_id}
+        AND user_id = ${user_id}
     `;
 
     if (plan.length === 0) {
@@ -367,17 +354,18 @@ export async function unConfirmTripPlan(req, res) {
     const updated = await sql`
       UPDATE saved_trip_plans
       SET confirmed = ${!currentConfirmed}
-      WHERE plan_id = ${plan_id}
-      AND user_id = ${userId}
+      WHERE id = ${plan_id}
+        AND user_id = ${user_id}
       RETURNING confirmed
     `;
 
     res.status(200).json({
       confirmed: updated[0].confirmed,
+      message: "Trip plan confirmation toggled",
     });
 
   } catch (err) {
-    console.error("Toggle confirm error:", err);
+    console.error("Toggle unconfirm trip plan error:", err);
     res.status(500).json({
       message: err.message,
     });
