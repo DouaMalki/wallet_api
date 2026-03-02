@@ -81,9 +81,9 @@ export async function getPublishedTripPlans(req, res) {
       WHERE p.published = TRUE
 
       ORDER BY
-          stats.total_ratings DESC,
-          p.number_of_seens DESC,
-          p.created_at DESC
+      (COALESCE(stats.rating, 0) * COALESCE(stats.total_ratings, 0)) DESC,
+      p.number_of_seens DESC,
+      p.created_at DESC
     `;
 
     res.json(result);
