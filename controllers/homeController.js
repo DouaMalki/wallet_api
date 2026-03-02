@@ -276,7 +276,7 @@ export async function incrementTripPlanSeens(req, res) {
   }
 }
 
-export async function toggleSaveTripPlan(req, res) {
+export async function SaveTripPlan(req, res) {
   const { plan_id, user_id } = req.body;
 
   if (!plan_id || !user_id) {
