@@ -15,6 +15,7 @@ export async function getPublishedTripPlans(req, res) {
         p.number_of_seens,
         p.start_date,
         p.end_date,
+        p.saved,
 
         (p.end_date - p.start_date + 1) AS total_days,
 
@@ -80,9 +81,10 @@ export async function getPublishedTripPlans(req, res) {
 
       WHERE p.published = TRUE
 
-      ORDER BY stats.rating DESC NULLS LAST,
-               stats.total_ratings DESC,
-               p.created_at DESC
+      ORDER BY
+      (COALESCE(stats.rating, 0) * COALESCE(stats.total_ratings, 0)) DESC,
+      p.number_of_seens DESC,
+      p.created_at DESC
     `;
 
     res.json(result);
@@ -271,6 +273,101 @@ export async function incrementTripPlanSeens(req, res) {
     console.error("Increment trip plan seens error:", err);
     res.status(500).json({
       message: "Failed to increment trip plan views",
+    });
+  }
+}
+
+export async function SaveTripPlan(req, res) {
+  const { plan_id, user_id } = req.body;
+
+  if (!plan_id || !user_id) {
+    return res.status(400).json({
+      message: "plan_id and user_id are required",
+    });
+  }
+
+  try {
+    const plan = await sql`
+      SELECT id, saved
+      FROM saved_trip_plans
+      WHERE id = ${plan_id}
+        AND user_id = ${user_id}
+    `;
+
+    if (plan.length === 0) {
+      return res.status(404).json({
+        message: "Trip plan not found",
+      });
+    }
+
+    const currentSaved = plan[0].saved;
+
+    const updated = await sql`
+      UPDATE saved_trip_plans
+      SET saved = ${!currentSaved}
+      WHERE id = ${plan_id}
+        AND user_id = ${user_id}
+      RETURNING saved
+    `;
+
+    res.status(200).json({
+      saved: updated[0].saved,
+      message: updated[0].saved
+        ? "Trip plan saved"
+        : "Trip plan unsaved",
+    });
+
+  } catch (err) {
+    console.error("Toggle save trip plan error:", err);
+    res.status(500).json({
+      message: "Failed to toggle save trip plan",
+    });
+  }
+}
+
+
+export async function unConfirmTripPlan(req, res) {
+  const { plan_id, user_id } = req.body;
+
+  if (!plan_id || !user_id) {
+    return res.status(400).json({
+      message: "plan_id and user_id are required",
+    });
+  }
+
+  try {
+    const plan = await sql`
+      SELECT id, confirmed
+      FROM saved_trip_plans
+      WHERE id = ${plan_id}
+        AND user_id = ${user_id}
+    `;
+
+    if (plan.length === 0) {
+      return res.status(404).json({
+        message: "Trip plan not found",
+      });
+    }
+
+    const currentConfirmed = Boolean(plan[0].confirmed);
+
+    const updated = await sql`
+      UPDATE saved_trip_plans
+      SET confirmed = ${!currentConfirmed}
+      WHERE id = ${plan_id}
+        AND user_id = ${user_id}
+      RETURNING confirmed
+    `;
+
+    res.status(200).json({
+      confirmed: updated[0].confirmed,
+      message: "Trip plan confirmation toggled",
+    });
+
+  } catch (err) {
+    console.error("Toggle unconfirm trip plan error:", err);
+    res.status(500).json({
+      message: err.message,
     });
   }
 }
