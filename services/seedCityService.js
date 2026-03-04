@@ -806,7 +806,7 @@ export async function ensureLocationsForTripType({
     } finally {
         // Ensure unlock even if seed fails
         await sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`;
-        const tEnsure1 = Date.now(); // ✅ END ensure
+        const tEnsure1 = Date.now(); // END ensure
         console.log(`[TIMING] ensureLocationsForTripType total: ${tEnsure1 - tEnsure0} ms`, { cityId, tripTypeSlug, missingCount: missing?.length });
     }
 }

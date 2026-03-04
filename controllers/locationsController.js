@@ -25,7 +25,7 @@ export async function getLocations(req, res) {
             await ensureLocationsForTripType({
                 cityId,
                 tripTypeSlug: safeTripType,
-                radiusMeters: 8000,
+                radiusMeters: 3000,
                 maxTotalPlaces: 220,
                 batchSize: 15,
             });
