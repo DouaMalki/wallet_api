@@ -6,7 +6,7 @@ export async function getCategories(req, res) {
         const rows = await listCategories();
         return res.status(200).json(rows.map(mapCategoryRow));
     } catch (err) {
-        console.error("Error getting categories:", err);
+        console.error("Error getting categories:", err?.message || err);
         return res.status(500).json({ message: "Internal server error" });
     }
 }
