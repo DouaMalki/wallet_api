@@ -5,5 +5,6 @@ export function mapCategoryRow(row) {
         name: row.name,
         nameAr: row.name_ar ?? null,
         googleTypes: row.google_types ?? [],
+        weatherProfile: row.weather_profile ?? "mixed",
     };
 }
