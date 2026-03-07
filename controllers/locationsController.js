@@ -21,15 +21,15 @@ export async function getLocations(req, res) {
                 ? tripType.trim().toLowerCase()
                 : null;
 
-        if (cityId && safeTripType) {
-            await ensureLocationsForTripType({
-                cityId,
-                tripTypeSlug: safeTripType,
-                radiusMeters: 3000,
-                maxTotalPlaces: 220,
-                batchSize: 15,
-            });
-        }
+        // if (cityId && safeTripType) {
+        //     await ensureLocationsForTripType({
+        //         cityId,
+        //         tripTypeSlug: safeTripType,
+        //         radiusMeters: 3000,
+        //         maxTotalPlaces: 220,
+        //         batchSize: 15,
+        //     });
+        // }
 
         const lang = (req.query.lang || "en").toLowerCase() === "ar" ? "ar" : "en";
 
