@@ -795,23 +795,27 @@ export async function seedCityOnDemand({
     let geminiTotalMs = 0;
     let geminiBatches = 0;
     for (const group of chunk(filteredForGemini, batchSize)) {
-        const tG0 = Date.now();
-        const out = await geminiEnrich(group, city.name, city.name_ar);
+        try {
+            const tG0 = Date.now();
+            const out = await geminiEnrich(group, city.name, city.name_ar);
+            const tG1 = Date.now();
 
-        const tG1 = Date.now();
+            geminiTotalMs += (tG1 - tG0);
+            geminiBatches += 1;
 
-        geminiTotalMs += (tG1 - tG0);
-        geminiBatches += 1;
+            const results = out?.results || [];
+            const map = new Map(results.map((r) => [r.google_place_id, r]));
 
-        const results = out?.results || [];
-        const map = new Map(results.map((r) => [r.google_place_id, r]));
+            for (const p of group) {
+                const r = map.get(p.google_place_id);
+                if (!r) continue;
+                await updateGeminiFields(p.google_place_id, r);
+            }
 
-        for (const p of group) {
-            const r = map.get(p.google_place_id);
-            if (!r) continue;
-            await updateGeminiFields(p.google_place_id, r);
+            geminiEnriched += group.length;
+        } catch (err) {
+            console.warn("[GEMINI] batch skipped:", err?.message || err);
         }
-        geminiEnriched += group.length;
     }
     console.log(`[TIMING] geminiEnrich total: ${geminiTotalMs} ms`, { geminiBatches, batchSize });
 
