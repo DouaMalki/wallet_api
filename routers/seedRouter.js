@@ -1,5 +1,5 @@
 import express from "express";
-import { refreshSeed, ensureSeed, ensureAllSeed } from "../controllers/seedController.js";
+import { refreshSeed, ensureSeed, ensureAllSeed, ensureMissingSeed } from "../controllers/seedController.js";
 
 const router = express.Router();
 
