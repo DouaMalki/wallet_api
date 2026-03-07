@@ -93,7 +93,7 @@ function buildJitterPoints({
     centerLng,
     radiusMeters,
     stepMeters,
-    jitterRatio = 0.35,
+    jitterRatio = 0,
     maxPoints = 25,
 }) {
     const points = [];
@@ -570,8 +570,8 @@ export async function seedCityOnDemand({
     tripTypeSlug = null,
     categoriesSlugs = null,
     radiusMeters = 3000,
-    stepMeters = 1500,
-    maxPoints = 21,
+    stepMeters = 2200,
+    maxPoints = 5,
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
@@ -582,14 +582,14 @@ export async function seedCityOnDemand({
 
     const city = await getCityOrThrow(cityId);
 
-    const SEARCH_CONCURRENCY = 3;
+    const SEARCH_CONCURRENCY = 5;
 
     const points = buildJitterPoints({
         centerLat: city.center_lat,
         centerLng: city.center_lng,
         radiusMeters,
         stepMeters,
-        jitterRatio: 0.35,
+        jitterRatio: 0,
         maxPoints,
     });
 
@@ -633,7 +633,6 @@ export async function seedCityOnDemand({
         const collectedIds = new Set(); // per-category unique
 
         const searchResponses = await mapLimit(points, SEARCH_CONCURRENCY, async (pt) => {
-
             const resp = await placesSearchNearby({
                 lat: pt.lat,
                 lng: pt.lng,
@@ -695,7 +694,7 @@ export async function seedCityOnDemand({
 
         const alreadyDoneBefore = collected.length - notDetailedYet.length;
 
-        const DETAILS_CONCURRENCY = 4;
+        const DETAILS_CONCURRENCY = 6;
 
         const insertFlags = await mapLimit(toDetail, DETAILS_CONCURRENCY, async (item) => {
             if (totalImported >= maxTotalPlaces) return 0;
@@ -828,8 +827,8 @@ export async function ensureLocationsForTripType({
     tripTypeSlug = null,
     categoriesSlugs = null,
     radiusMeters = 3000,
-    stepMeters = 1500,
-    maxPoints = 21,
+    stepMeters = 2200,
+    maxPoints = 5,
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
@@ -875,7 +874,8 @@ export async function ensureLocationsForTripType({
             tripTypeSlug: safeTripType,
             categoriesSlugs: missing,
             radiusMeters,
-            stepMeters: Math.round(radiusMeters * 0.5),
+            stepMeters: Math.round(radiusMeters * 0.75),
+            maxPoints: 7,
             maxTotalPlaces,
             batchSize,
         });
@@ -895,8 +895,8 @@ export async function refreshLocationsForTripType({
     tripTypeSlug = null,
     categoriesSlugs = null,
     radiusMeters = 3000,
-    stepMeters = 1500,
-    maxPoints = 21,
+    stepMeters = 2200,
+    maxPoints = 5,
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {

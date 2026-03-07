@@ -539,7 +539,7 @@ export async function seedCityOnDemand({
         centerLng: city.center_lng,
         radiusMeters,
         stepMeters,
-        jitterRatio: 0.35,
+        jitterRatio: 0,
         maxPoints,
     });
 
@@ -576,67 +576,135 @@ export async function seedCityOnDemand({
         if (!includedTypes.length) continue;
 
         const minNeed = Number(cat.min_results_per_city ?? 10);
-        const maxThisCategory = Math.min(minNeed, Math.max(10, maxTotalPlaces - totalImported));
+        const remaining = Math.max(0, maxTotalPlaces - totalImported);
+        const maxThisCategory = Math.min(minNeed, remaining);
+
+        if (maxThisCategory <= 0) break;
 
 
         const collected = [];// [{placeId, seedData}]
         const collectedIds = new Set(); // per-category unique
 
-        const searchResponses = await mapLimit(points, SEARCH_CONCURRENCY, async (pt) => {
+        // const searchResponses = await mapLimit(points, SEARCH_CONCURRENCY, async (pt) => {
 
-            const resp = await placesSearchNearby({
-                lat: pt.lat,
-                lng: pt.lng,
-                includedTypes,
-                maxResultCount: 20,
-                radius: radiusMeters,
-            });
-            searchCalls++;
-            return resp;
-        });
+        //     const resp = await placesSearchNearby({
+        //         lat: pt.lat,
+        //         lng: pt.lng,
+        //         includedTypes,
+        //         maxResultCount: 20,
+        //         radius: radiusMeters,
+        //     });
+        //     searchCalls++;
+        //     return resp;
+        // });
 
-        for (const resp of searchResponses) {
+        // for (const resp of searchResponses) {
+        //     if (collectedIds.size >= maxThisCategory) break;
+
+        //     const places = resp?.places || [];
+        //     for (const p of places) {
+        //         const placeId = p?.id;
+        //         if (!placeId) continue;
+
+        //         if (collectedIds.has(placeId)) continue;
+
+        //         const plat = p?.location?.latitude;
+        //         const plng = p?.location?.longitude;
+
+        //         // distance filter (cheap)
+        //         if (plat != null && plng != null) {
+        //             const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
+        //             if (dist > MAX_FROM_CENTER) continue;
+        //         }
+
+        //         collectedIds.add(placeId);
+        //         collected.push({
+        //             placeId,
+        //             seed: {
+        //                 displayName: p?.displayName?.text || null,
+        //                 lat: plat ?? null,
+        //                 lng: plng ?? null,
+        //                 rating: p?.rating ?? null,
+        //                 userRatingCount: p?.userRatingCount ?? null,
+        //                 photos: p?.photos ?? null,
+        //                 primaryType: p?.primaryType ?? null,
+        //                 types: p?.types ?? null,
+        //             },
+        //         });
+
+        //         if (collectedIds.size >= maxThisCategory) break;
+        //     }
+        // }
+
+        const SEARCH_BATCH = 3;
+
+        for (let i = 0; i < points.length; i += SEARCH_BATCH) {
             if (collectedIds.size >= maxThisCategory) break;
 
-            const places = resp?.places || [];
-            for (const p of places) {
-                const placeId = p?.id;
-                if (!placeId) continue;
+            const batchPoints = points.slice(i, i + SEARCH_BATCH);
 
-                if (collectedIds.has(placeId)) continue;
-
-                const plat = p?.location?.latitude;
-                const plng = p?.location?.longitude;
-
-                // distance filter (cheap)
-                if (plat != null && plng != null) {
-                    const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
-                    if (dist > MAX_FROM_CENTER) continue;
-                }
-
-                collectedIds.add(placeId);
-                collected.push({
-                    placeId,
-                    seed: {
-                        displayName: p?.displayName?.text || null,
-                        lat: plat ?? null,
-                        lng: plng ?? null,
-                        rating: p?.rating ?? null,
-                        userRatingCount: p?.userRatingCount ?? null,
-                        photos: p?.photos ?? null,
-                        primaryType: p?.primaryType ?? null,
-                        types: p?.types ?? null,
-                    },
+            const batchResponses = await mapLimit(batchPoints, SEARCH_BATCH, async (pt) => {
+                const resp = await placesSearchNearby({
+                    lat: pt.lat,
+                    lng: pt.lng,
+                    includedTypes,
+                    maxResultCount: Math.min(10, Math.max(1, maxThisCategory - collectedIds.size)),
+                    radius: Math.min(1500, stepMeters),
                 });
+                searchCalls++;
+                return resp;
+            });
 
+            for (const resp of batchResponses) {
                 if (collectedIds.size >= maxThisCategory) break;
+
+                const places = resp?.places || [];
+                for (const p of places) {
+                    const placeId = p?.id;
+                    if (!placeId) continue;
+                    if (collectedIds.has(placeId)) continue;
+
+                    const plat = p?.location?.latitude;
+                    const plng = p?.location?.longitude;
+
+                    if (plat != null && plng != null) {
+                        if (city.has_boundary) {
+                            const inside = isPointInsideCityBoundaryLocal(city, plat, plng);
+                            if (!inside) continue;
+                        } else {
+                            const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
+                            if (dist > MAX_FROM_CENTER) continue;
+                        }
+                    }
+
+                    collectedIds.add(placeId);
+                    collected.push({
+                        placeId,
+                        seed: {
+                            displayName: p?.displayName?.text || null,
+                            lat: plat ?? null,
+                            lng: plng ?? null,
+                            rating: p?.rating ?? null,
+                            userRatingCount: p?.userRatingCount ?? null,
+                            photos: p?.photos ?? null,
+                            primaryType: p?.primaryType ?? null,
+                            types: p?.types ?? null,
+                        },
+                    });
+
+                    if (collectedIds.size >= maxThisCategory) break;
+                }
             }
         }
 
         const notDetailedYet = collected.filter(x => !detailedPlaceIds.has(x.placeId));
         const collectedPlaceIds = notDetailedYet.map(x => x.placeId);
         const existingSet = await getExistingPlaceIdsForCity(city.id, collectedPlaceIds);
-        const toDetail = notDetailedYet.filter(x => !existingSet.has(x.placeId));
+        // const toDetail = notDetailedYet.filter(x => !existingSet.has(x.placeId));
+        const remainingGlobal = Math.max(0, maxTotalPlaces - totalImported);
+        const toDetail = notDetailedYet
+            .filter(x => !existingSet.has(x.placeId))
+            .slice(0, remainingGlobal);
 
         const alreadyDoneBefore = collected.length - notDetailedYet.length;
 
@@ -798,7 +866,8 @@ export async function ensureLocationsForTripType({
             tripTypeSlug: safeTripType,
             categoriesSlugs: missing,
             radiusMeters,
-            stepMeters: Math.round(radiusMeters * 0.5),
+            stepMeters: Math.round(radiusMeters * 0.75),
+            maxPoints: 7,
             maxTotalPlaces,
             batchSize,
         });
