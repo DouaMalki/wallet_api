@@ -41,9 +41,6 @@ export function mapLocationRow(row) {
 
         tripTypes: row.trip_types || [],
 
-        // coverPhotoReference: ref,
-        // coverPhotoUrl: ref ? `${base}/api/photos/${encodeURIComponent(ref)}?maxWidth=800` : null,
-        // ✅ الصور:
         coverPhotoReference,
         coverPhotoUrl,
     };

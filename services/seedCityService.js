@@ -127,7 +127,13 @@ function buildJitterPoints({
 //retrieve city data from the cities table.
 async function getCityOrThrow(cityId) {
     const rows = await sql`
-    SELECT id, name, name_ar, center_lat, center_lng
+    SELECT
+      id,
+      name,
+      name_ar,
+      center_lat,
+      center_lng,
+      boundary_geom IS NOT NULL AS has_boundary
     FROM public.cities
     WHERE id = ${cityId}
     LIMIT 1
@@ -339,6 +345,23 @@ async function getExistingPlaceIdsForCity(cityId, googlePlaceIds) {
     return new Set(rows.map(r => r.google_place_id));
 }
 
+async function isPointInsideCityBoundary(cityId, lat, lng) {
+    if (lat == null || lng == null) return false;
+
+    const rows = await sql`
+      SELECT ST_Contains(
+        boundary_geom,
+        ST_SetSRID(ST_Point(${lng}, ${lat}), 4326)
+      ) AS inside
+      FROM public.cities
+      WHERE id = ${cityId}
+        AND boundary_geom IS NOT NULL
+      LIMIT 1
+    `;
+
+    return Boolean(rows?.[0]?.inside);
+}
+
 ///////Google Places helpers (same as your script)///////
 async function placesSearchNearby({ lat, lng, includedTypes, maxResultCount = 20, radius = 3000 }) {
     const url = "https://places.googleapis.com/v1/places:searchNearby";
@@ -545,7 +568,7 @@ export async function seedCityOnDemand({
 
     // فلترة خفيفة: ما نجيب أماكن تبعد كثير عن center (حتى لو search رجعها)
     //const MAX_FROM_CENTER = radiusMeters * 1.6;
-    const MAX_FROM_CENTER = radiusMeters * 1.05;
+    const MAX_FROM_CENTER = radiusMeters * 1.05; // fallback only if boundary missing
 
     // determine slugs
     let slugs = [];
@@ -608,10 +631,15 @@ export async function seedCityOnDemand({
                 const plat = p?.location?.latitude;
                 const plng = p?.location?.longitude;
 
-                // distance filter (cheap)
+                // boundary filter first, fallback to distance only if boundary missing
                 if (plat != null && plng != null) {
-                    const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
-                    if (dist > MAX_FROM_CENTER) continue;
+                    if (city.has_boundary) {
+                        const inside = await isPointInsideCityBoundary(city.id, plat, plng);
+                        if (!inside) continue;
+                    } else {
+                        const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
+                        if (dist > MAX_FROM_CENTER) continue;
+                    }
                 }
 
                 collectedIds.add(placeId);
@@ -661,10 +689,15 @@ export async function seedCityOnDemand({
             const lat = d?.location?.latitude ?? item.seed.lat ?? null;
             const lng = d?.location?.longitude ?? item.seed.lng ?? null;
 
-            // distance filter
+            // boundary filter first, fallback to distance only if boundary missing
             if (lat != null && lng != null) {
-                const dist = haversineMeters(city.center_lat, city.center_lng, lat, lng);
-                if (dist > MAX_FROM_CENTER) return 0;
+                if (city.has_boundary) {
+                    const inside = await isPointInsideCityBoundary(city.id, lat, lng);
+                    if (!inside) return 0;
+                } else {
+                    const dist = haversineMeters(city.center_lat, city.center_lng, lat, lng);
+                    if (dist > MAX_FROM_CENTER) return 0;
+                }
             }
 
             const rating = d?.rating ?? item.seed.rating ?? null;

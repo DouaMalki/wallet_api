@@ -45,6 +45,10 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
     FROM locations l
     LEFT JOIN categories c ON c.id = l.category_id
 
+    -- join city so we can enforce boundary filtering safely
+    LEFT JOIN cities cy
+      ON cy.id = l.city_id
+      
     -- trip types aggregation
     LEFT JOIN LATERAL (
       SELECT
@@ -66,6 +70,21 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
     WHERE 1=1
       ${cityId ? sql`AND l.city_id = ${cityId}` : sql``}
 
+       -- extra safety: if city boundary exists, only return points covered by it
+      ${cityId ? sql`
+        AND (
+          cy.boundary_geom IS NULL
+          OR (
+            l.lat IS NOT NULL
+            AND l.lng IS NOT NULL
+            AND ST_Covers(
+              cy.boundary_geom,
+              ST_SetSRID(ST_Point(l.lng, l.lat), 4326)
+            )
+          )
+        )
+      ` : sql``}
+
       ${tripType ? sql`
         AND EXISTS (
           SELECT 1
@@ -83,4 +102,3 @@ export async function listLocations({ cityId = null, tripType = null, limit = nu
 
   return rows.map(mapLocationRow);
 }
-
