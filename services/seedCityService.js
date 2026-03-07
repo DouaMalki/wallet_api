@@ -1,4 +1,6 @@
 import { sql } from "../config/db.js";
+import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
+import { point } from "@turf/helpers";
 
 const GOOGLE_KEY = process.env.GOOGLE_MAPS_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -133,13 +135,22 @@ async function getCityOrThrow(cityId) {
       name_ar,
       center_lat,
       center_lng,
-      boundary_geom IS NOT NULL AS has_boundary
+      boundary_geom IS NOT NULL AS has_boundary,
+      CASE
+        WHEN boundary_geom IS NOT NULL THEN ST_AsGeoJSON(boundary_geom)
+        ELSE NULL
+      END AS boundary_geojson
     FROM public.cities
     WHERE id = ${cityId}
     LIMIT 1
   `;
     if (!rows?.length) throw new Error(`City not found: ${cityId}`);
-    return rows[0];
+
+    city.boundary_geojson = city.boundary_geojson
+        ? JSON.parse(city.boundary_geojson)
+        : null;
+
+    return city;
 }
 
 async function getRuleCategoriesByTripTypeSlug(tripTypeSlug) {
@@ -345,21 +356,30 @@ async function getExistingPlaceIdsForCity(cityId, googlePlaceIds) {
     return new Set(rows.map(r => r.google_place_id));
 }
 
-async function isPointInsideCityBoundary(cityId, lat, lng) {
-    if (lat == null || lng == null) return false;
+// async function isPointInsideCityBoundary(cityId, lat, lng) {
+//     if (lat == null || lng == null) return false;
 
-    const rows = await sql`
-      SELECT ST_Contains(
-        boundary_geom,
-        ST_SetSRID(ST_Point(${lng}, ${lat}), 4326)
-      ) AS inside
-      FROM public.cities
-      WHERE id = ${cityId}
-        AND boundary_geom IS NOT NULL
-      LIMIT 1
-    `;
+//     const rows = await sql`
+//       SELECT ST_Contains(
+//         boundary_geom,
+//         ST_SetSRID(ST_Point(${lng}, ${lat}), 4326)
+//       ) AS inside
+//       FROM public.cities
+//       WHERE id = ${cityId}
+//         AND boundary_geom IS NOT NULL
+//       LIMIT 1
+//     `;
 
-    return Boolean(rows?.[0]?.inside);
+//     return Boolean(rows?.[0]?.inside);
+// }
+
+function isPointInsideCityBoundaryLocal(city, lat, lng) {
+    if (!city?.boundary_geojson || lat == null || lng == null) return false;
+
+    return booleanPointInPolygon(
+        point([Number(lng), Number(lat)]),
+        city.boundary_geojson
+    );
 }
 
 ///////Google Places helpers (same as your script)///////
@@ -634,7 +654,7 @@ export async function seedCityOnDemand({
                 // boundary filter first, fallback to distance only if boundary missing
                 if (plat != null && plng != null) {
                     if (city.has_boundary) {
-                        const inside = await isPointInsideCityBoundary(city.id, plat, plng);
+                        const inside = isPointInsideCityBoundaryLocal(city, plat, plng);
                         if (!inside) continue;
                     } else {
                         const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
@@ -692,7 +712,7 @@ export async function seedCityOnDemand({
             // boundary filter first, fallback to distance only if boundary missing
             if (lat != null && lng != null) {
                 if (city.has_boundary) {
-                    const inside = await isPointInsideCityBoundary(city.id, lat, lng);
+                    const inside = isPointInsideCityBoundaryLocal(city, lat, lng);
                     if (!inside) return 0;
                 } else {
                     const dist = haversineMeters(city.center_lat, city.center_lng, lat, lng);

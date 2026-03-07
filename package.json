@@ -13,6 +13,8 @@
   "license": "ISC",
   "dependencies": {
     "@neondatabase/serverless": "^1.0.0",
+    "@turf/boolean-point-in-polygon": "^7.3.4",
+    "@turf/helpers": "^7.3.4",
     "@upstash/ratelimit": "^2.0.5",
     "@upstash/redis": "^1.34.9",
     "cors": "^2.8.5",
