@@ -23,7 +23,7 @@ import homeRouter from "./routers/homeRouter.js";
 import savedTripPlansRouter from "./routers/savedTripPlansRouter.js";
 import confirmedTripPlansRouter from "./routers/confirmedTripPlansRouter.js";
 import tripPlansRouter from "./routers/tripPlansRouter.js";
-import seedRouter from "./routes/seedRouter.js";
+import seedRouter from "./routers/seedRouter.js";
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
