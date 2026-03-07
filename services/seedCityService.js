@@ -144,11 +144,18 @@ async function getCityOrThrow(cityId) {
     WHERE id = ${cityId}
     LIMIT 1
   `;
+
+    console.log("[CITY] raw boundary_geojson type:", typeof rows[0]?.boundary_geojson);
+
     if (!rows?.length) throw new Error(`City not found: ${cityId}`);
 
-    city.boundary_geojson = city.boundary_geojson
-        ? JSON.parse(city.boundary_geojson)
-        : null;
+    const city = rows[0];
+
+    if (typeof city.boundary_geojson === "string") {
+        city.boundary_geojson = JSON.parse(city.boundary_geojson);
+    } else if (!city.boundary_geojson) {
+        city.boundary_geojson = null;
+    }
 
     return city;
 }
@@ -823,15 +830,26 @@ export async function ensureLocationsForTripType({
     batchSize = 15,
 }) {
 
+    console.log("[ENSURE] start", {
+        cityId,
+        tripTypeSlug,
+    });
+
     const tEnsure0 = Date.now();
 
     if (!cityId || !tripTypeSlug) return { didSeed: false, reason: "missing params" };
 
     const safeTripType = String(tripTypeSlug).toLowerCase().trim();
     const required = await getRuleCategoriesByTripTypeSlug(tripTypeSlug);
+
+    console.log("[ENSURE] required slugs:", required);
+
     if (!required.length) return { didSeed: false, reason: "no required_category_slugs" };
 
     const missing = await getMissingCategorySlugsForCity(cityId, required);
+
+    console.log("[ENSURE] missing slugs:", missing);
+
     if (!missing.length) return { didSeed: false, reason: "already sufficient" };
 
 
@@ -846,6 +864,8 @@ export async function ensureLocationsForTripType({
         return { didSeed: false, reason: "locked", missing };
     }
     try {
+        console.log("[ENSURE] before seedCityOnDemand");
+
         const stats = await seedCityOnDemand({
             cityId,
             tripTypeSlug: safeTripType,
@@ -855,6 +875,8 @@ export async function ensureLocationsForTripType({
             maxTotalPlaces,
             batchSize,
         });
+        console.log("[ENSURE] after seedCityOnDemand", stats);
+
         return { didSeed: true, missing, stats };
     } finally {
         // Ensure unlock even if seed fails
