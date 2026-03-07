@@ -3,9 +3,15 @@ import { refreshSeed, ensureSeed, ensureAllSeed } from "../controllers/seedContr
 
 const router = express.Router();
 
+//router.get("/refresh", refreshSeed);
+//router.get("/ensure", ensureSeed);
+//router.get("/ensure-all", ensureAllSeed);
+
+// GET /api/seed/refresh?cityId=ramallah&tripType=cultural
 router.get("/refresh", refreshSeed);
-router.get("/ensure", ensureSeed);
-router.get("/ensure-all", ensureAllSeed);
+
+// GET /api/seed/ensure-missing?cityId=ramallah&tripType=cultural&maxTotal=40&batch=5&pause=2000
+router.get("/ensure-missing", ensureMissingSeed);
 
 console.log("✅ seedRouter loaded");
 
