@@ -44,6 +44,9 @@ export async function refreshSeed(req, res) {
             stack: error?.stack,
         });
 
-        return res.status(500).json({ message: "Internal server error" });
+        return res.status(500).json({
+            message: "Internal server error",
+            error: error?.message || String(error),
+        });
     }
 }
