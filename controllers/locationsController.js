@@ -1,5 +1,5 @@
 import { listLocations } from "../repositories/locationsRepo.js";
-import { ensureLocationsForTripType } from "../services/seedCityService.js";
+//import { ensureLocationsForTripType } from "../services/seedCityService.js";
 
 export async function getLocations(req, res) {
     try {
@@ -14,6 +14,7 @@ export async function getLocations(req, res) {
 
         const parsedOffset =
             offset === undefined || offset === null || offset === "" ? null : Number(offset);
+
         const safeOffset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : null;
 
         const safeTripType =

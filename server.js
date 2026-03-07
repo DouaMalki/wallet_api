@@ -23,6 +23,7 @@ import homeRouter from "./routers/homeRouter.js";
 import savedTripPlansRouter from "./routers/savedTripPlansRouter.js";
 import confirmedTripPlansRouter from "./routers/confirmedTripPlansRouter.js";
 import tripPlansRouter from "./routers/tripPlansRouter.js";
+import seedRouter from "./routes/seedRouter.js";
 
 const app = express();
 if (process.env.NODE_ENV === "production") job.start();
@@ -70,6 +71,7 @@ app.use("/api/trip_type_rules", tripTypeRulesRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/photos", photosRouter);
 app.use("/api/saved_trip_plans", saveTripPlanRouter);
+app.use("/api/seed", seedRouter);
 
 
 console.log("=== ROUTES ===");

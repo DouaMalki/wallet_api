@@ -1,6 +1,10 @@
 // wallet_api/scripts/seed_city.js
 import "dotenv/config";
-import { seedCityOnDemand, ensureLocationsForTripType } from "../services/seedCityService.js";
+import {
+    seedCityOnDemand,
+    ensureLocationsForTripType,
+    refreshLocationsForTripType,
+} from "../services/seedCityService.js";
 
 function getArg(name, def = null) {
     const idx = process.argv.findIndex((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -20,7 +24,7 @@ function parseCsv(csv) {
 
 async function main() {
     const cityId = getArg("city");
-    const mode = (getArg("mode", "on_demand") || "on_demand").toLowerCase(); // seed | on_demand | ensure
+    const mode = (getArg("mode", "on_demand") || "on_demand").toLowerCase(); // seed | on_demand | ensure | refresh
     const tripTypeSlug = getArg("trip_type"); // optional
     const categoriesCsv = getArg("categories"); // optional
     const radiusMeters = Number(getArg("radius", "3000"));
@@ -32,7 +36,8 @@ async function main() {
             "Usage:\n" +
             "  node scripts/seed_city.js --city=ramallah --mode=on_demand --categories=hiking,kids_activities\n" +
             "  node scripts/seed_city.js --city=ramallah --mode=on_demand --trip_type=cultural\n" +
-            "  node scripts/seed_city.js --city=ramallah --mode=ensure --trip_type=cultural\n"
+            "  node scripts/seed_city.js --city=ramallah --mode=ensure --trip_type=cultural\n" +
+            "  node scripts/seed_city.js --city=ramallah --mode=refresh --trip_type=cultural\n"
         );
         process.exit(1);
     }
@@ -55,6 +60,23 @@ async function main() {
         });
 
         console.log("\n=== ENSURE RESULT ===");
+        console.log(JSON.stringify(out, null, 2));
+        return;
+    }
+
+    if (mode === "refresh") {
+        const slugs = parseCsv(categoriesCsv);
+
+        const out = await refreshLocationsForTripType({
+            cityId,
+            tripTypeSlug: tripTypeSlug ? tripTypeSlug.trim().toLowerCase() : null,
+            categoriesSlugs: slugs.length ? slugs : null,
+            radiusMeters,
+            maxTotalPlaces,
+            batchSize,
+        });
+
+        console.log("\n=== REFRESH RESULT ===");
         console.log(JSON.stringify(out, null, 2));
         return;
     }

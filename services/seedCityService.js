@@ -885,3 +885,61 @@ export async function ensureLocationsForTripType({
         console.log(`[TIMING] ensureLocationsForTripType total: ${tEnsure1 - tEnsure0} ms`, { cityId, tripTypeSlug, missingCount: missing?.length });
     }
 }
+
+export async function refreshLocationsForTripType({
+    cityId,
+    tripTypeSlug = null,
+    categoriesSlugs = null,
+    radiusMeters = 3000,
+    stepMeters = 1500,
+    maxPoints = 21,
+    maxTotalPlaces = 220,
+    batchSize = 15,
+}) {
+    if (!cityId) {
+        return { didRefresh: false, reason: "missing cityId" };
+    }
+
+    let slugs = [];
+
+    if (Array.isArray(categoriesSlugs) && categoriesSlugs.length) {
+        slugs = categoriesSlugs.map((s) => String(s).toLowerCase().trim()).filter(Boolean);
+    } else if (tripTypeSlug) {
+        slugs = await getRuleCategoriesByTripTypeSlug(tripTypeSlug);
+    }
+
+    if (!slugs.length) {
+        return { didRefresh: false, reason: "no categories resolved" };
+    }
+
+    // optional advisory lock so same city/tripType doesn't refresh in parallel
+    const safeTripType = tripTypeSlug ? String(tripTypeSlug).toLowerCase().trim() : "manual";
+    const lockKey = `refresh:${cityId}:${safeTripType}`;
+    const lockRows = await sql`SELECT pg_try_advisory_lock(hashtext(${lockKey})) AS ok`;
+    const ok = Boolean(lockRows?.[0]?.ok);
+
+    if (!ok) {
+        return { didRefresh: false, reason: "locked", categories: slugs };
+    }
+
+    try {
+        const stats = await seedCityOnDemand({
+            cityId,
+            tripTypeSlug: tripTypeSlug ? safeTripType : null,
+            categoriesSlugs: slugs,
+            radiusMeters,
+            stepMeters,
+            maxPoints,
+            maxTotalPlaces,
+            batchSize,
+        });
+
+        return {
+            didRefresh: true,
+            categories: slugs,
+            stats,
+        };
+    } finally {
+        await sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`;
+    }
+}
