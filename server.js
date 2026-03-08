@@ -72,6 +72,7 @@ app.use("/api/categories", categoriesRouter);
 app.use("/api/photos", photosRouter);
 app.use("/api/saved_trip_plans", saveTripPlanRouter);
 app.use("/api/seed", seedRouter);
+console.log("✅ mounted /api/seed");
 
 
 console.log("=== ROUTES ===");

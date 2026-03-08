@@ -3,7 +3,12 @@ import { backfillGeminiController } from "../controllers/seedController.js";
 
 const router = express.Router();
 
-router.get("/backfill-gemini", backfillGeminiController);
+console.log("✅ seedRouter loaded");
+
+router.get("/backfill-gemini", (req, res, next) => {
+    console.log("✅ HIT /api/seed/backfill-gemini");
+    next();
+}, backfillGeminiController);
 
 export default router;
 
