@@ -1,8 +1,11 @@
-import {
-    backfillGeminiController,
-} from "../controllers/seedController.js";
+import express from "express";
+import { backfillGeminiController } from "../controllers/seedController.js";
+
+const router = express.Router();
 
 router.get("/backfill-gemini", backfillGeminiController);
+
+export default router;
 
 // import express from "express";
 // import { refreshSeed, ensureSeed, ensureAllSeed, ensureMissingSeed } from "../controllers/seedController.js";
