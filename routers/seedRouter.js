@@ -1,3 +1,9 @@
+import {
+    backfillGeminiController,
+} from "../controllers/seedController.js";
+
+router.get("/backfill-gemini", backfillGeminiController);
+
 // import express from "express";
 // import { refreshSeed, ensureSeed, ensureAllSeed, ensureMissingSeed } from "../controllers/seedController.js";
 
@@ -17,15 +23,21 @@
 
 // export default router;
 
-import express from "express";
-import { ensureSeed, refreshSeed, ensureMissingSeed } from "../controllers/seedController.js";
 
-const router = express.Router();
 
-router.get("/refresh", refreshSeed);
-router.get("/ensure", ensureSeed);
-router.get("/ensure-missing", ensureMissingSeed);
 
-console.log("✅ seedRouter loaded");
 
-export default router;
+
+// هاي اخر اشي عملتها comment
+// import express from "express";
+// import { ensureSeed, refreshSeed, ensureMissingSeed } from "../controllers/seedController.js";
+
+// const router = express.Router();
+
+// router.get("/refresh", refreshSeed);
+// router.get("/ensure", ensureSeed);
+// router.get("/ensure-missing", ensureMissingSeed);
+
+// console.log("✅ seedRouter loaded");
+
+// export default router;

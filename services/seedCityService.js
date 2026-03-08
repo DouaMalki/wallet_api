@@ -792,6 +792,88 @@ export async function seedCityOnDemand({
     return { imported: totalImported, geminiEnriched, categories: slugs };
 }
 
+export async function backfillGeminiForCity({
+    cityId,
+    batchSize = 15,
+    limit = 200,
+}) {
+    if (!cityId) throw new Error("Missing cityId");
+
+    const city = await getCityOrThrow(cityId);
+
+    const rows = await sql`
+    SELECT
+      l.google_place_id,
+      l.name,
+      l.rating,
+      l.user_ratings_total,
+      c.slug AS category_slug
+    FROM public.locations l
+    LEFT JOIN public.categories c
+      ON c.id = l.category_id
+    WHERE l.city_id = ${cityId}
+      AND l.google_place_id IS NOT NULL
+      AND (
+        l.estimated_time IS NULL OR
+        l.max_cost IS NULL OR
+        l.recommended_for IS NULL OR cardinality(l.recommended_for) = 0 OR
+        l.closed_days IS NULL OR cardinality(l.closed_days) = 0
+      )
+    ORDER BY l.updated_at DESC NULLS LAST
+    LIMIT ${limit}
+  `;
+
+    if (!rows.length) {
+        return {
+            scanned: 0,
+            geminiEnriched: 0,
+            reason: "no locations need gemini backfill",
+        };
+    }
+
+    let geminiEnriched = 0;
+    let geminiTotalMs = 0;
+    let geminiBatches = 0;
+
+    for (const group of chunk(rows, batchSize)) {
+        const t0 = Date.now();
+
+        const out = await geminiEnrich(group, city.name, city.name_ar);
+
+        const t1 = Date.now();
+        geminiTotalMs += (t1 - t0);
+        geminiBatches += 1;
+
+        const results = out?.results || [];
+        const resultMap = new Map(results.map((r) => [r.google_place_id, r]));
+
+        for (const place of group) {
+            const enriched = resultMap.get(place.google_place_id);
+            if (!enriched) continue;
+
+            await updateGeminiFields(place.google_place_id, enriched);
+            geminiEnriched += 1;
+        }
+    }
+
+    console.log("[TIMING] backfillGeminiForCity total:", {
+        cityId,
+        scanned: rows.length,
+        geminiEnriched,
+        geminiBatches,
+        batchSize,
+        geminiTotalMs,
+        avgBatchMs: geminiBatches ? Math.round(geminiTotalMs / geminiBatches) : 0,
+    });
+
+    return {
+        scanned: rows.length,
+        geminiEnriched,
+        geminiBatches,
+        batchSize,
+    };
+}
+
 ///////Public API: ensure (called by controller)///////
 export async function ensureLocationsForTripType({
     cityId,
