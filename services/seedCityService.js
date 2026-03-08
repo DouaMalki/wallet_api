@@ -1,6 +1,4 @@
 import { sql } from "../config/db.js";
-import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
-import { point } from "@turf/helpers";
 
 const GOOGLE_KEY = process.env.GOOGLE_MAPS_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -93,7 +91,7 @@ function buildJitterPoints({
     centerLng,
     radiusMeters,
     stepMeters,
-    jitterRatio = 0,
+    jitterRatio = 0.35,
     maxPoints = 25,
 }) {
     const points = [];
@@ -135,29 +133,13 @@ async function getCityOrThrow(cityId) {
       name_ar,
       center_lat,
       center_lng,
-      boundary_geom IS NOT NULL AS has_boundary,
-      CASE
-        WHEN boundary_geom IS NOT NULL THEN ST_AsGeoJSON(boundary_geom)
-        ELSE NULL
-      END AS boundary_geojson
+      boundary_geom IS NOT NULL AS has_boundary
     FROM public.cities
     WHERE id = ${cityId}
     LIMIT 1
   `;
-
-    console.log("[CITY] raw boundary_geojson type:", typeof rows[0]?.boundary_geojson);
-
     if (!rows?.length) throw new Error(`City not found: ${cityId}`);
-
-    const city = rows[0];
-
-    if (typeof city.boundary_geojson === "string") {
-        city.boundary_geojson = JSON.parse(city.boundary_geojson);
-    } else if (!city.boundary_geojson) {
-        city.boundary_geojson = null;
-    }
-
-    return city;
+    return rows[0];
 }
 
 async function getRuleCategoriesByTripTypeSlug(tripTypeSlug) {
@@ -363,30 +345,21 @@ async function getExistingPlaceIdsForCity(cityId, googlePlaceIds) {
     return new Set(rows.map(r => r.google_place_id));
 }
 
-// async function isPointInsideCityBoundary(cityId, lat, lng) {
-//     if (lat == null || lng == null) return false;
+async function isPointInsideCityBoundary(cityId, lat, lng) {
+    if (lat == null || lng == null) return false;
 
-//     const rows = await sql`
-//       SELECT ST_Contains(
-//         boundary_geom,
-//         ST_SetSRID(ST_Point(${lng}, ${lat}), 4326)
-//       ) AS inside
-//       FROM public.cities
-//       WHERE id = ${cityId}
-//         AND boundary_geom IS NOT NULL
-//       LIMIT 1
-//     `;
+    const rows = await sql`
+      SELECT ST_Contains(
+        boundary_geom,
+        ST_SetSRID(ST_Point(${lng}, ${lat}), 4326)
+      ) AS inside
+      FROM public.cities
+      WHERE id = ${cityId}
+        AND boundary_geom IS NOT NULL
+      LIMIT 1
+    `;
 
-//     return Boolean(rows?.[0]?.inside);
-// }
-
-function isPointInsideCityBoundaryLocal(city, lat, lng) {
-    if (!city?.boundary_geojson || lat == null || lng == null) return false;
-
-    return booleanPointInPolygon(
-        point([Number(lng), Number(lat)]),
-        city.boundary_geojson
-    );
+    return Boolean(rows?.[0]?.inside);
 }
 
 ///////Google Places helpers (same as your script)///////
@@ -570,8 +543,8 @@ export async function seedCityOnDemand({
     tripTypeSlug = null,
     categoriesSlugs = null,
     radiusMeters = 3000,
-    stepMeters = 2200,
-    maxPoints = 5,
+    stepMeters = 1500,
+    maxPoints = 21,
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
@@ -582,21 +555,20 @@ export async function seedCityOnDemand({
 
     const city = await getCityOrThrow(cityId);
 
-    const SEARCH_CONCURRENCY = 5;
+    const SEARCH_CONCURRENCY = 3;
 
     const points = buildJitterPoints({
         centerLat: city.center_lat,
         centerLng: city.center_lng,
         radiusMeters,
         stepMeters,
-        jitterRatio: 0,
+        jitterRatio: 0.35,
         maxPoints,
     });
 
     // فلترة خفيفة: ما نجيب أماكن تبعد كثير عن center (حتى لو search رجعها)
     //const MAX_FROM_CENTER = radiusMeters * 1.6;
     const MAX_FROM_CENTER = radiusMeters * 1.05; // fallback only if boundary missing
-
     // determine slugs
     let slugs = [];
     if (Array.isArray(categoriesSlugs) && categoriesSlugs.length) {
@@ -633,6 +605,7 @@ export async function seedCityOnDemand({
         const collectedIds = new Set(); // per-category unique
 
         const searchResponses = await mapLimit(points, SEARCH_CONCURRENCY, async (pt) => {
+
             const resp = await placesSearchNearby({
                 lat: pt.lat,
                 lng: pt.lng,
@@ -657,10 +630,11 @@ export async function seedCityOnDemand({
                 const plat = p?.location?.latitude;
                 const plng = p?.location?.longitude;
 
+                // distance filter (cheap)
                 // boundary filter first, fallback to distance only if boundary missing
                 if (plat != null && plng != null) {
                     if (city.has_boundary) {
-                        const inside = isPointInsideCityBoundaryLocal(city, plat, plng);
+                        const inside = await isPointInsideCityBoundary(city.id, plat, plng);
                         if (!inside) continue;
                     } else {
                         const dist = haversineMeters(city.center_lat, city.center_lng, plat, plng);
@@ -694,7 +668,7 @@ export async function seedCityOnDemand({
 
         const alreadyDoneBefore = collected.length - notDetailedYet.length;
 
-        const DETAILS_CONCURRENCY = 6;
+        const DETAILS_CONCURRENCY = 4;
 
         const insertFlags = await mapLimit(toDetail, DETAILS_CONCURRENCY, async (item) => {
             if (totalImported >= maxTotalPlaces) return 0;
@@ -715,10 +689,11 @@ export async function seedCityOnDemand({
             const lat = d?.location?.latitude ?? item.seed.lat ?? null;
             const lng = d?.location?.longitude ?? item.seed.lng ?? null;
 
+            // distance filter
             // boundary filter first, fallback to distance only if boundary missing
             if (lat != null && lng != null) {
                 if (city.has_boundary) {
-                    const inside = isPointInsideCityBoundaryLocal(city, lat, lng);
+                    const inside = await isPointInsideCityBoundary(city.id, lat, lng);
                     if (!inside) return 0;
                 } else {
                     const dist = haversineMeters(city.center_lat, city.center_lng, lat, lng);
@@ -794,27 +769,23 @@ export async function seedCityOnDemand({
     let geminiTotalMs = 0;
     let geminiBatches = 0;
     for (const group of chunk(filteredForGemini, batchSize)) {
-        try {
-            const tG0 = Date.now();
-            const out = await geminiEnrich(group, city.name, city.name_ar);
-            const tG1 = Date.now();
+        const tG0 = Date.now();
+        const out = await geminiEnrich(group, city.name, city.name_ar);
 
-            geminiTotalMs += (tG1 - tG0);
-            geminiBatches += 1;
+        const tG1 = Date.now();
 
-            const results = out?.results || [];
-            const map = new Map(results.map((r) => [r.google_place_id, r]));
+        geminiTotalMs += (tG1 - tG0);
+        geminiBatches += 1;
 
-            for (const p of group) {
-                const r = map.get(p.google_place_id);
-                if (!r) continue;
-                await updateGeminiFields(p.google_place_id, r);
-            }
+        const results = out?.results || [];
+        const map = new Map(results.map((r) => [r.google_place_id, r]));
 
-            geminiEnriched += group.length;
-        } catch (err) {
-            console.warn("[GEMINI] batch skipped:", err?.message || err);
+        for (const p of group) {
+            const r = map.get(p.google_place_id);
+            if (!r) continue;
+            await updateGeminiFields(p.google_place_id, r);
         }
+        geminiEnriched += group.length;
     }
     console.log(`[TIMING] geminiEnrich total: ${geminiTotalMs} ms`, { geminiBatches, batchSize });
 
@@ -827,16 +798,11 @@ export async function ensureLocationsForTripType({
     tripTypeSlug = null,
     categoriesSlugs = null,
     radiusMeters = 3000,
-    stepMeters = 2200,
-    maxPoints = 5,
+    stepMeters = 1500,
+    maxPoints = 21,
     maxTotalPlaces = 220,
     batchSize = 15,
 }) {
-
-    console.log("[ENSURE] start", {
-        cityId,
-        tripTypeSlug,
-    });
 
     const tEnsure0 = Date.now();
 
@@ -844,15 +810,9 @@ export async function ensureLocationsForTripType({
 
     const safeTripType = String(tripTypeSlug).toLowerCase().trim();
     const required = await getRuleCategoriesByTripTypeSlug(tripTypeSlug);
-
-    console.log("[ENSURE] required slugs:", required);
-
     if (!required.length) return { didSeed: false, reason: "no required_category_slugs" };
 
     const missing = await getMissingCategorySlugsForCity(cityId, required);
-
-    console.log("[ENSURE] missing slugs:", missing);
-
     if (!missing.length) return { didSeed: false, reason: "already sufficient" };
 
 
@@ -867,83 +827,20 @@ export async function ensureLocationsForTripType({
         return { didSeed: false, reason: "locked", missing };
     }
     try {
-        console.log("[ENSURE] before seedCityOnDemand");
-
         const stats = await seedCityOnDemand({
             cityId,
             tripTypeSlug: safeTripType,
             categoriesSlugs: missing,
             radiusMeters,
-            stepMeters: Math.round(radiusMeters * 0.75),
-            maxPoints: 7,
+            stepMeters: Math.round(radiusMeters * 0.5),
             maxTotalPlaces,
             batchSize,
         });
-        console.log("[ENSURE] after seedCityOnDemand", stats);
-
         return { didSeed: true, missing, stats };
     } finally {
         // Ensure unlock even if seed fails
         await sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`;
         const tEnsure1 = Date.now(); // END ensure
         console.log(`[TIMING] ensureLocationsForTripType total: ${tEnsure1 - tEnsure0} ms`, { cityId, tripTypeSlug, missingCount: missing?.length });
-    }
-}
-
-export async function refreshLocationsForTripType({
-    cityId,
-    tripTypeSlug = null,
-    categoriesSlugs = null,
-    radiusMeters = 3000,
-    stepMeters = 2200,
-    maxPoints = 5,
-    maxTotalPlaces = 220,
-    batchSize = 15,
-}) {
-    if (!cityId) {
-        return { didRefresh: false, reason: "missing cityId" };
-    }
-
-    let slugs = [];
-
-    if (Array.isArray(categoriesSlugs) && categoriesSlugs.length) {
-        slugs = categoriesSlugs.map((s) => String(s).toLowerCase().trim()).filter(Boolean);
-    } else if (tripTypeSlug) {
-        slugs = await getRuleCategoriesByTripTypeSlug(tripTypeSlug);
-    }
-
-    if (!slugs.length) {
-        return { didRefresh: false, reason: "no categories resolved" };
-    }
-
-    // optional advisory lock so same city/tripType doesn't refresh in parallel
-    const safeTripType = tripTypeSlug ? String(tripTypeSlug).toLowerCase().trim() : "manual";
-    const lockKey = `refresh:${cityId}:${safeTripType}`;
-    const lockRows = await sql`SELECT pg_try_advisory_lock(hashtext(${lockKey})) AS ok`;
-    const ok = Boolean(lockRows?.[0]?.ok);
-
-    if (!ok) {
-        return { didRefresh: false, reason: "locked", categories: slugs };
-    }
-
-    try {
-        const stats = await seedCityOnDemand({
-            cityId,
-            tripTypeSlug: tripTypeSlug ? safeTripType : null,
-            categoriesSlugs: slugs,
-            radiusMeters,
-            stepMeters,
-            maxPoints,
-            maxTotalPlaces,
-            batchSize,
-        });
-
-        return {
-            didRefresh: true,
-            categories: slugs,
-            stats,
-        };
-    } finally {
-        await sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`;
     }
 }
